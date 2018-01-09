@@ -1,0 +1,27 @@
+#tod text {
+    cursor: default;
+}
+  
+#tod .dot-label text {
+    font-size: 12px;
+}
+  
+#tod .tod-xlabel, 
+#tod .tod-ylabel{
+    font-size : 14px;
+    font-family: Ubuntu,Helvetica,sans-serif;
+    color: #777;
+}
+#tod .row {
+    background: #777;
+}
+#tod .tod-react-hover{
+    -webkit-box-shadow: 0px 0px 24px 0px rgba(0,0,0,0.75);
+    -moz-box-shadow: 0px 0px 24px 0px rgba(0,0,0,0.75);
+    box-shadow: 0px 0px 24px 0px rgba(0,0,0,0.75);
+}
+#tod .tod-chart-title{
+    text-transform: uppercase;
+    font-size: 14px;
+    color: #444
+}

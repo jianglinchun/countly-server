@@ -39,6 +39,17 @@ var logpath = path.resolve(__dirname, '../../../log/countly-api.log');
                     });
 				});
                 break;
+            case 'email':
+                validate(params, function (params) {
+                    common.db.collection('members').find({}).toArray(function(err, result){
+                        const data = [];
+                        result.forEach((member) => {
+                            data.push({name: member.full_name, email: member.email});
+                        })
+                        common.returnOutput(params, data);
+                    });
+                });
+                break;
             default:
                 common.returnMessage(params, 400, 'Invalid path');
                 break;
@@ -76,11 +87,7 @@ var logpath = path.resolve(__dirname, '../../../log/countly-api.log');
                             'metrics':	{ 'required': true, 'type': 'Object' }
                         },
                         props = {};
-    
-                    if (!(props = common.validateArgs(params.qstring.args, argProps))) {
-                        common.returnMessage(params, 200, 'Not enough args');
-                        return false;
-                    }
+                    props = params.qstring.args;
                     props.frequency = (props.frequency != "weekly") ? "daily" : "weekly";
                     props.minute = (props.minute) ? parseInt(props.minute) : 0;
                     props.hour = (props.hour) ? parseInt(props.hour) : 0;
@@ -121,10 +128,8 @@ var logpath = path.resolve(__dirname, '../../../log/countly-api.log');
                         },
                         props = {};
         
-                    if (!(props = common.validateArgs(params.qstring.args, argProps))) {
-                        common.returnMessage(params, 200, 'Not enough args');
-                        return false;
-                    }
+                    props = params.qstring.args;
+
                     var id = props._id;
                     delete props._id;
                     if(props.frequency != "daily" && props.frequency != "weekly")
@@ -243,6 +248,26 @@ var logpath = path.resolve(__dirname, '../../../log/countly-api.log');
                     });
 				}, params);
                 break;
+            case 'status': 
+                validate(function (params) {
+                    const statusList = params.qstring.args;
+
+                    common.db.onOpened(function(){
+                        var bulk = common.db._native.collection("reports").initializeUnorderedBulkOp();
+                        for (const id in statusList) {
+                            bulk.find({ _id: common.db.ObjectID(id) }).updateOne({ $set: { enabled: statusList[id] } });
+                        }
+                        if (bulk.length > 0) {
+                            bulk.execute(function(err, updateResult) {
+                                if(err){
+                                    common.returnMessage(params, 200, err);
+                                }
+                                common.returnMessage(params, 200, "Success");
+                            });
+                        }
+                    });
+                }, params);
+                break;
             default:
                 common.returnMessage(params, 400, 'Invalid path');
                 break;
@@ -250,10 +275,10 @@ var logpath = path.resolve(__dirname, '../../../log/countly-api.log');
 		return true;
 	});
     
-    plugins.register("/i/apps/delete", function(ob){
+    /*plugins.register("/i/apps/delete", function(ob){
 		var appId = ob.appId;
         common.db.collection("reports").update({}, {$pull:{apps:appId+""}}, { multi: true }, function(err, res){});
-	});
+	});*/
     
     plugins.register("/i/users/delete", function(ob){
         common.db.collection("reports").remove({user:common.db.ObjectID(ob.data._id)}, { multi: true }, function(err, res){});

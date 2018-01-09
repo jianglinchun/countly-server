@@ -104,9 +104,11 @@
                         }
                     }
 				}, 
-                error:function(){
-                    CountlyHelpers.alert(jQuery.i18n.map["crashes.not-found"], "red");
-                    app.navigate("/crashes", true);
+                error:function(jqXHR, textStatus, errorThrown ){
+                    if(errorThrown && errorThrown === "Bad Request"){
+                        CountlyHelpers.alert(jQuery.i18n.map["crashes.not-found"], "red");
+                        app.navigate("/crashes", true);
+                    }
                 }
 			});
 		}
@@ -222,6 +224,10 @@
         countlyCrashes.common(id, "show", callback);
     };
     
+    countlyCrashes.resolving = function (id, callback) {
+        countlyCrashes.common(id, "resolving", callback);
+    };
+ 
     countlyCrashes.del = function (id, callback) {
         countlyCrashes.common(id, "delete", callback);
     };

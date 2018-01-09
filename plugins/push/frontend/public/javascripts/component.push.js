@@ -21,7 +21,6 @@ window.component('push', function(push) {
 			IOS: 'i',
 			ANDROID: 'a'
 		},
-
 		S: '|'
 	};
 
@@ -43,6 +42,7 @@ window.component('push', function(push) {
 	if (!push.statusers) { push.statusers = []; }
 	if (!push.actions) { push.actions = []; }
 
+
 	push.Message = function(data) {
 		if (!(this instanceof push.Message)) {
 			return new push.Message(data);
@@ -62,11 +62,25 @@ window.component('push', function(push) {
 		}.bind(this);
 
 		this.___data = data;
-
+		
 		// ID of tokens build when building audience
 		this._id = m.prop(data._id);
 		this.type = m.prop(data.type || push.C.TYPE.MESSAGE);
 		this.apps = buildClearingProp(data.apps || []);
+
+		// Automated push fields
+		this.auto = m.prop(data.auto || false);
+		this.autoActive = m.prop(data.autoActive || false);
+		this.autoOnEntry = m.prop(data.autoOnEntry || false);
+		this.autoCohorts = m.prop(data.autoCohorts || []);
+		this.autoEnd = m.prop(data.autoEnd || undefined);
+		this.autoDelay = m.prop(data.autoDelay || undefined);
+		this.autoTime = m.prop(data.autoTime || undefined);
+		this.autoCapMessages = m.prop(data.autoCapMessages || undefined);
+		this.autoCapSleep = m.prop(data.autoCapSleep || undefined);
+		// this.availableCohorts = buildClearingProp(data.availableCohorts || []);
+		// Automated push fields -----
+
 		this.platforms = buildClearingProp(data.platforms || []);
 		this.sent = m.prop(data.sent);
 		this.sound = vprop(data.sound, function(v){ return !!v; }, t('pu.po.tab2.extras.sound.invalid'));
@@ -225,8 +239,6 @@ window.component('push', function(push) {
 			this.platforms(this.platforms().filter(function(p){ return av.indexOf(p) !== -1; }));
 		}
 
-		this.schedule = m.prop(false);
-
 		this.ack = m.prop(false);
 
 		this._id(data._id);
@@ -260,7 +272,8 @@ window.component('push', function(push) {
 				drillConditions: this.drillConditions(),
 				geo: this.geo(),
 				tz: this.tz(),
-				test: this.test()
+				test: this.test(),
+				auto: this.auto()
 			};
 			if (includeId) {
 				obj._id = this._id();
@@ -276,6 +289,13 @@ window.component('push', function(push) {
 				obj.date = this.date();
 				obj.buttons = parseInt(this.buttons());
 				obj.media = this.media();
+				obj.autoOnEntry = this.autoOnEntry();
+				obj.autoCohorts = this.autoCohorts();
+				obj.autoEnd = this.autoEnd();
+				obj.autoDelay = this.autoDelay();
+				obj.autoTime = this.autoTime();
+				obj.autoCapMessages = this.autoCapMessages();
+				obj.autoCapSleep = this.autoCapSleep();
 
 				if (this.data()) {
 					obj.data = typeof this.data() === 'string' ? JSON.parse(this.data()) : this.data();
@@ -374,7 +394,7 @@ window.component('push', function(push) {
 			}
 		};
 
-		this.date = m.prop(typeof data.date === 'string' ? new Date(data.date) : data.date || null);
+		this.date = m.prop(typeof data.date === 'string' ? new Date(data.date) : data.date || undefined);
 		this.tz = buildClearingProp(typeof data.tz === 'undefined' ? false : data.tz);
 		this.created = m.prop(data.created || null);
 		this.sent = m.prop(data.sent || null);
@@ -401,6 +421,39 @@ window.component('push', function(push) {
 		this.createdSeconds = function() {
 			return this.date() ? new Date(this.date()).getTime() : null;
 		};
+
+		this.remoteAutoActive = function() {
+			return m.request({
+				method: 'GET',
+				url: window.countlyCommon.API_URL + '/i/pushes/autoActive',
+				data: {
+					api_key: window.countlyGlobal.member.api_key,
+					_id: this._id(),
+					autoActive: this.autoActive()
+				}
+			}).then(function(resp){
+				if (resp.error) { throw resp.error; }
+				this.autoActive(resp.autoActive);
+				return resp;
+			});
+		};
+
+		this.remoteLoad = function() {
+			return m.request({
+				method: 'GET',
+				url: window.countlyCommon.API_URL + '/i/pushes/message',
+				data: {
+					api_key: window.countlyGlobal.member.api_key,
+					args: JSON.stringify({
+						_id: this._id(),
+						apps: this.apps()
+					})
+				}
+			}).then(function(resp){
+				this.result.events(resp.result.events);
+				return resp;
+			}.bind(this));
+		};
 	};
 
 	push.MessageResult = function(data) {
@@ -416,6 +469,7 @@ window.component('push', function(push) {
 		this.error = m.prop(data.error);
 		this.errorCodes = m.prop(data.errorCodes);
 		this.nextbatch = m.prop(data.nextbatch);
+		this.events = m.prop(data.events || {});
 
 		this.percentSent = function() {
 			return this.total() === 0 ? 0 : Math.min(100, +(100 * this.sent() / (this.total() - (this.processed() - this.sent()))).toFixed(2));
@@ -494,5 +548,4 @@ window.component('push', function(push) {
 			}
 		});
 	};
-
 });

@@ -16,6 +16,32 @@ var plugin = {},
     plugins.internalDrillEvents.push("[CLY]_view");
     plugins.internalDrillEvents.push("[CLY]_action");
     
+    plugins.register("/i/user_merge", function(ob){
+        var newAppUser = ob.newAppUser;
+        var oldAppUser = ob.oldAppUser;
+        if(typeof oldAppUser.vc !== "undefined"){
+            if(typeof newAppUser.vc === "undefined")
+                newAppUser.vc = 0;
+            newAppUser.vc += oldAppUser.vc;
+        }
+        if(typeof oldAppUser.lvt !== "undefined"){
+            if(!newAppUser.lvt || oldAppUser.lvt > newAppUser.lvt){
+                newAppUser.lvt = oldAppUser.lvt;
+                newAppUser.lv = oldAppUser.lv;
+            }
+        }
+    });
+    
+    plugins.register("/i/device_id", function(ob){
+		var params = ob.params;
+		var appId = params.app_id;
+		var oldUid = ob.oldUser.uid;
+		var newUid = ob.newUser.uid;
+        if(oldUid != newUid){
+            common.db.collection("app_views" +  appId).update({uid:oldUid}, {'$set': {uid:newUid}}, {multi:true} ,function(err, res){});
+        }
+	});
+    
     plugins.register("/o", function(ob){
 		var params = ob.params;
 		var validateUserForDataReadAPI = ob.validateUserForDataReadAPI;
@@ -44,7 +70,14 @@ var plugin = {},
                                 common.drillDb.collection(collectionName).findOne( {"_id": "meta"},{_id:0, "sg.domain":1} ,function(err,meta2){
                                     if(meta2 && meta2.sg && meta2.sg.domain)
                                         common.arrayAddUniq(res.domains, meta2.sg.domain.values);
-                                    common.returnOutput(params,res);
+                                    var eventHash = crypto.createHash('sha1').update("[CLY]_action" + params.qstring.app_id).digest('hex');
+                                    var collectionName = "drill_meta" + params.qstring.app_id;
+                                    common.drillDb.collection(collectionName).findOne( {"_id": "meta_"+eventHash},{_id:0, "sg.domain":1} ,function(err,meta){
+                                        if(meta && meta.sg && meta.sg.domain.values){
+                                            common.arrayAddUniq(res.domains, Object.keys(meta.sg.domain.values));
+                                        }
+                                        common.returnOutput(params,res);   
+                                    });
                                 });
                                     
                             });
@@ -86,6 +119,40 @@ var plugin = {},
     
     function getHeatmap(params){
         var result = {types:[], data:[]};
+        var devices = [
+            {
+                type: "all",
+                displayText: "All",
+                minWidth: 0,
+                maxWidth: 10240
+            },
+            {
+                type: "mobile",
+                minWidth: 0,
+                maxWidth: 767
+            },
+            {
+                type: "tablet",
+                minWidth: 767,
+                maxWidth: 1024
+            },
+            {
+                type: "desktop",
+                minWidth: 1024,
+                maxWidth: 10240
+            },  
+        ];
+
+        var deviceType = params.qstring.deviceType;
+        var actionType = params.qstring.actionType;
+        var device = devices.filter((device) => {
+            return device.type == deviceType;
+        });
+
+        if(!device.length){
+            common.returnMessage(params, 400, 'Bad request parameter: device type');
+            return false;
+        }
         var collectionName = "drill_events" + crypto.createHash('sha1').update("[CLY]_action" + params.qstring.app_id).digest('hex');
         common.drillDb.collection(collectionName).findOne( {"_id": "meta_v2"},{_id:0, "sg.type":1, "sg.domain":1} ,function(err,meta){
             if(meta && meta.sg && meta.sg.type)
@@ -101,93 +168,124 @@ var plugin = {},
                     common.arrayAddUniq(result.types, meta2.sg.type.values);
                 if(meta2 && meta2.sg && meta2.sg.domain)
                     common.arrayAddUniq(result.domains, meta2.sg.domain.values);
-                if (params.qstring.period) {
-                    //check if period comes from datapicker
-                    if (params.qstring.period.indexOf(",") !== -1) {
-                        try {
-                            params.qstring.period = JSON.parse(params.qstring.period);
-                        } catch (SyntaxError) {
-                            console.log('Parsing custom period failed!');
-                            common.returnMessage(params, 400, 'Bad request parameter: period');
-                            return false;
+                var eventHash = crypto.createHash('sha1').update("[CLY]_action" + params.qstring.app_id).digest('hex');
+                var collectionMeta = "drill_meta" + params.qstring.app_id;
+                common.drillDb.collection(collectionMeta).findOne( {"_id": "meta_"+eventHash},{_id:0, "sg.domain":1} ,function(err,meta_event){
+                    if(meta_event && meta_event.sg && meta_event.sg.type)
+                        common.arrayAddUniq(result.types, Object.keys(meta_event.sg.type.values));
+                    if(meta_event && meta_event.sg && meta_event.sg.domain)
+                        common.arrayAddUniq(result.domains, Object.keys(meta_event.sg.domain.values));
+                     
+                    if (params.qstring.period) {
+                        //check if period comes from datapicker
+                        if (params.qstring.period.indexOf(",") !== -1) {
+                            try {
+                                params.qstring.period = JSON.parse(params.qstring.period);
+                            } catch (SyntaxError) {
+                                console.log('Parsing custom period failed!');
+                                common.returnMessage(params, 400, 'Bad request parameter: period');
+                                return false;
+                            }
                         }
-                    }
-                    else{
-                        switch (params.qstring.period){
-                            case "month":
-                            case "day":
-                            case "yesterday":
-                            case "hour":
-                                break;
-                            default:
-                                if(!/([0-9]+)days/.test(params.qstring.period)){
-                                    common.returnMessage(params, 400, 'Bad request parameter: period');
-                                    return false;
-                                }
-                                break;
-                        }
-                    }
-                } else {
-                    common.returnMessage(params, 400, 'Missing request parameter: period');
-                    return false;
-                }
-                countlyCommon.setTimezone(params.appTimezone);
-                countlyCommon.setPeriod(params.qstring.period);
-                var periodObj = countlyCommon.periodObj,
-                    queryObject = {"up.lv":params.qstring.view},
-                    now = params.time.now.toDate();
-        
-                //create current period array if it does not exist
-                if (!periodObj.currentPeriodArr) {
-                    periodObj.currentPeriodArr = [];
-        
-                    //create a period array that starts from the beginning of the current year until today
-                    if (params.qstring.period == "month") {
-                        for (var i = 0; i < (now.getMonth() + 1); i++) {
-                            var daysInMonth = moment().month(i).daysInMonth();
-        
-                            for (var j = 0; j < daysInMonth; j++) {
-                                periodObj.currentPeriodArr.push(periodObj.activePeriod + "." + (i + 1) + "." + (j + 1));
-        
-                                // If current day of current month, just break
-                                if ((i == now.getMonth()) && (j == (now.getDate() - 1))) {
+                        else{
+                            switch (params.qstring.period){
+                                case "month":
+                                case "day":
+                                case "yesterday":
+                                case "hour":
                                     break;
+                                default:
+                                    if(!/([0-9]+)days/.test(params.qstring.period)){
+                                        common.returnMessage(params, 400, 'Bad request parameter: period');
+                                        return false;
+                                    }
+                                    break;
+                            }
+                        }
+                    } else {
+                        common.returnMessage(params, 400, 'Missing request parameter: period');
+                        return false;
+                    }
+                    countlyCommon.setTimezone(params.appTimezone);
+                    countlyCommon.setPeriod(params.qstring.period);
+                    var periodObj = countlyCommon.periodObj,
+                        queryObject = {},
+                        now = params.time.now.toDate();
+            
+                    //create current period array if it does not exist
+                    if (!periodObj.currentPeriodArr) {
+                        periodObj.currentPeriodArr = [];
+            
+                        //create a period array that starts from the beginning of the current year until today
+                        if (params.qstring.period == "month") {
+                            for (var i = 0; i < (now.getMonth() + 1); i++) {
+                                var daysInMonth = moment().month(i).daysInMonth();
+            
+                                for (var j = 0; j < daysInMonth; j++) {
+                                    periodObj.currentPeriodArr.push(periodObj.activePeriod + "." + (i + 1) + "." + (j + 1));
+            
+                                    // If current day of current month, just break
+                                    if ((i == now.getMonth()) && (j == (now.getDate() - 1))) {
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
-                    //create a period array that starts from the beginning of the current month until today
-                    else if(params.qstring.period == "day") {
-                        for(var i = 0; i < now.getDate(); i++) {
-                            periodObj.currentPeriodArr.push(periodObj.activePeriod + "." + (i + 1));
+                        //create a period array that starts from the beginning of the current month until today
+                        else if(params.qstring.period == "day") {
+                            for(var i = 0; i < now.getDate(); i++) {
+                                periodObj.currentPeriodArr.push(periodObj.activePeriod + "." + (i + 1));
+                            }
+                        }
+                        //create one day period array
+                        else{
+                            periodObj.currentPeriodArr.push(periodObj.activePeriod);
                         }
                     }
-                    //create one day period array
-                    else{
-                        periodObj.currentPeriodArr.push(periodObj.activePeriod);
+        
+                    //get timestamps of start of days (DD-MM-YYYY-00:00) with respect to apptimezone for both beginning and end of period arrays
+                    var tmpArr;
+                    queryObject.ts = {};
+            
+                    tmpArr = periodObj.currentPeriodArr[0].split(".");
+                    queryObject.ts.$gte = new Date(Date.UTC(parseInt( tmpArr[0]),parseInt(tmpArr[1])-1,parseInt(tmpArr[2]) ));
+                    queryObject.ts.$gte.setTimezone(params.appTimezone);
+                    queryObject.ts.$gte = queryObject.ts.$gte.getTime() + queryObject.ts.$gte.getTimezoneOffset()*60000;
+            
+                    tmpArr = periodObj.currentPeriodArr[periodObj.currentPeriodArr.length - 1].split(".");
+                    queryObject.ts.$lt = new Date(Date.UTC(parseInt( tmpArr[0]),parseInt(tmpArr[1])-1,parseInt(tmpArr[2]) ));
+                    queryObject.ts.$lt.setDate(queryObject.ts.$lt.getDate() + 1);
+                    queryObject.ts.$lt.setTimezone(params.appTimezone);
+                    queryObject.ts.$lt = queryObject.ts.$lt.getTime() + queryObject.ts.$lt.getTimezoneOffset()*60000;
+                    
+                    queryObject["sg.width"] = {};
+                    queryObject["sg.width"].$gt = device[0].minWidth;
+                    queryObject["sg.width"].$lte = device[0].maxWidth;
+                    queryObject["sg.type"] = actionType;
+
+                    var projections = {
+                        _id:0, 
+                        c:1, 
+                        "sg.type":1, 
+                        "sg.width":1, 
+                        "sg.height":1
+                    };
+
+                    if(actionType == "scroll"){
+                        projections["sg.y"] = 1;
+                        queryObject["sg.view"] = params.qstring.view;                        
+                    }else {
+                        projections["sg.x"] = 1;                    
+                        projections["sg.y"] = 1;   
+                        queryObject["up.lv"] = params.qstring.view;                        
                     }
-                }
-        
-                //get timestamps of start of days (DD-MM-YYYY-00:00) with respect to apptimezone for both beginning and end of period arrays
-                var tmpArr;
-                queryObject.ts = {};
-        
-                tmpArr = periodObj.currentPeriodArr[0].split(".");
-                queryObject.ts.$gte = new Date(Date.UTC(parseInt( tmpArr[0]),parseInt(tmpArr[1])-1,parseInt(tmpArr[2]) ));
-                queryObject.ts.$gte.setTimezone(params.appTimezone);
-                queryObject.ts.$gte = queryObject.ts.$gte.getTime() + queryObject.ts.$gte.getTimezoneOffset()*60000;
-        
-                tmpArr = periodObj.currentPeriodArr[periodObj.currentPeriodArr.length - 1].split(".");
-                queryObject.ts.$lt = new Date(Date.UTC(parseInt( tmpArr[0]),parseInt(tmpArr[1])-1,parseInt(tmpArr[2]) ));
-                queryObject.ts.$lt.setDate(queryObject.ts.$lt.getDate() + 1);
-                queryObject.ts.$lt.setTimezone(params.appTimezone);
-                queryObject.ts.$lt = queryObject.ts.$lt.getTime() + queryObject.ts.$lt.getTimezoneOffset()*60000;
-                
-                if(params.qstring.segment)
-                    queryObject["sg.segment"] = params.qstring.segment;
-                common.drillDb.collection(collectionName).find( queryObject,{_id:0, c:1, "sg.type":1, "sg.x":1, "sg.y":1, "sg.width":1, "sg.height":1}).toArray(function(err,data){
-                    result.data = data;
-                    common.returnOutput(params,result,true,params.token_headers);
+
+                    if(params.qstring.segment)
+                        queryObject["sg.segment"] = params.qstring.segment;
+                    common.drillDb.collection(collectionName).find( queryObject, projections).toArray(function(err,data){
+                        result.data = data;
+                        common.returnOutput(params,result,true,params.token_headers);
+                    });
                 });
             });
         });

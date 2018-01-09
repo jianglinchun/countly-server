@@ -321,13 +321,22 @@ var AppRouter = Backbone.Router.extend({
     * //you are at #/manage/systemlogs
     * app.navigate("#/crashes", true);
     */
+    switchApp:function(app_id, callback){
+      countlyCommon.setActiveApp(app_id);
+
+      $("#active-app-name").text(countlyGlobal["apps"][app_id].name);
+      $("#active-app-icon").css("background-image", "url('" + countlyGlobal["path"] + "appimages/" + app_id + ".png')");
+
+      app.onAppSwitch(app_id, true);
+      app.activeView.appChanged(callback);
+    },
     main: function (forced) {
         var change = true,
             redirect = false;
         // detect app switch like
         //#/app/586e32ddc32cb30a01558cc1/analytics/events
-        if (location.hash.indexOf("#/app/") === 0) {
-            var app_id = location.hash.replace("#/app/", "");
+        if (Backbone.history.fragment.indexOf("/app/") === 0) {
+            var app_id = Backbone.history.fragment.replace("/app/", "");
             redirect = "#/";
             if (app_id && app_id.length) {
                 if (app_id.indexOf("/") !== -1) {
@@ -349,14 +358,14 @@ var AppRouter = Backbone.Router.extend({
                 }
             }
         }
-        else if (location.hash != "#/" && countlyGlobal["apps"][countlyCommon.ACTIVE_APP_ID]) {
+        else if (Backbone.history.fragment != "/" && countlyGlobal["apps"][countlyCommon.ACTIVE_APP_ID]) {
             $("#" + countlyGlobal["apps"][countlyCommon.ACTIVE_APP_ID].type + "-type a").each(function () {
                 if (this.hash != "#/" && this.hash != "") {
-                    if (location.hash == this.hash && $(this).css('display') != 'none') {
+                    if ("#"+Backbone.history.fragment == this.hash && $(this).css('display') != 'none') {
                         change = false;
                         return false;
                     }
-                    else if (location.hash.indexOf(this.hash) == 0 && $(this).css('display') != 'none') {
+                    else if (("#"+Backbone.history.fragment).indexOf(this.hash) == 0 && $(this).css('display') != 'none') {
                         redirect = this.hash;
                         return false;
                     }
@@ -368,16 +377,26 @@ var AppRouter = Backbone.Router.extend({
             app.navigate(redirect, true);
         }
         else if (change) {
-            if (location.hash != "#/")
+            if (Backbone.history.fragment != "/")
                 this.navigate("#/", true);
+            else if(countlyCommon.APP_NAMESPACE !== false)
+                this.navigate("#/"+countlyCommon.ACTIVE_APP_ID+Backbone.history.fragment, true);
             else
                 this.dashboard();
         }
         else {
-            this.activeView.render();
+            if(countlyCommon.APP_NAMESPACE !== false){
+                this.navigate("#/"+countlyCommon.ACTIVE_APP_ID+Backbone.history.fragment, true);
+            }
+            else{
+                this.activeView.render();
+            }
         }
     },
     dashboard: function () {
+        if (countlyGlobal["member"].restrict && countlyGlobal["member"].restrict.indexOf("#/") !== -1) {
+            return;
+        }
         if (_.isEmpty(countlyGlobal['apps']))
             this.renderWhenReady(this.manageAppsView);
         else if (typeof this.appTypes[countlyGlobal["apps"][countlyCommon.ACTIVE_APP_ID].type] != "undefined")
@@ -1337,6 +1356,11 @@ var AppRouter = Backbone.Router.extend({
             $("body").on("click", function () {
                 $topbar.find(".dropdown").removeClass("clicked");
             });
+            
+            $("#user_api_key_item").click(function () {
+                $(this).find('input').first().select();
+            });
+        
 
             // Prevent body scroll after list inside dropdown is scrolled till the end
             // Applies to any element that has prevent-body-scroll class as well
@@ -1767,7 +1791,17 @@ var AppRouter = Backbone.Router.extend({
             var tablePersistSettings = pageSizeSettings.filter(function (item) {
                 return (item.viewId === app.activeView.cid | (item.viewId === app.activeView.cid && item.selector === settings.sTableId));
             })[0];
-            return tablePersistSettings ? tablePersistSettings.pageSize : 50;
+            
+            var pageSize;
+            
+            if(tablePersistSettings && tablePersistSettings.pageSize)
+                pageSize = tablePersistSettings.pageSize;
+            else if(settings.oInit && settings.oInit.iDisplayLength)
+                pageSize = settings.oInit.iDisplayLength;
+            else
+                pageSize = settings.iDisplayLength || settings._iDisplayLength || 50;
+
+            return pageSize;
         }
 
         $.extend(true, $.fn.dataTable.defaults, {
@@ -2292,6 +2326,7 @@ var AppRouter = Backbone.Router.extend({
             for (var i = 0; i < this.appSwitchCallbacks.length; i++) {
                 this.appSwitchCallbacks[i](appId);
             }
+            app.localize();
         }
     },
     onAppManagementSwitch: function (appId, type) {
@@ -2552,4 +2587,64 @@ Backbone.history.checkUrl = function(){
         Backbone.history._checkUrl();
 };
 
+Backbone.history.noHistory = function(hash){
+    if(history && history.replaceState){
+        history.replaceState(undefined, undefined, hash);
+    }
+    else{
+        location.replace(hash);
+    }
+};
+
+if(countlyCommon.APP_NAMESPACE !== false){
+    Backbone.history.__checkUrl = Backbone.history.checkUrl;
+    Backbone.history._getFragment = Backbone.history.getFragment;
+    Backbone.history.appIds = [];
+    for(var i in countlyGlobal.apps){
+        Backbone.history.appIds.push(i);
+    }
+    Backbone.history.getFragment = function(){
+        var fragment = Backbone.history._getFragment();
+        if(fragment.indexOf("/"+countlyCommon.ACTIVE_APP_ID) === 0){
+            fragment = fragment.replace("/"+countlyCommon.ACTIVE_APP_ID, "");
+        }
+        return fragment;
+    };
+    Backbone.history.checkUrl = function(){
+        var app_id = Backbone.history._getFragment().split("/")[1] || "";
+        if(countlyCommon.ACTIVE_APP_ID !== app_id && Backbone.history.appIds.indexOf(app_id) === -1){
+            Backbone.history.noHistory("#/"+countlyCommon.ACTIVE_APP_ID + Backbone.history._getFragment());
+            app_id = countlyCommon.ACTIVE_APP_ID;
+        }
+        
+        if(countlyCommon.ACTIVE_APP_ID !== app_id){
+            app.switchApp(app_id, function(){
+                if(Backbone.history.checkOthers())
+                    Backbone.history.__checkUrl();
+            });
+        }
+        else{
+            if(Backbone.history.checkOthers())
+                Backbone.history.__checkUrl();
+        }
+    };
+    
+    //initial hash check
+    (function(){
+        var app_id = Backbone.history._getFragment().split("/")[1] || "";
+        if(countlyCommon.ACTIVE_APP_ID === app_id || Backbone.history.appIds.indexOf(app_id) !== -1){
+            //we have app id
+            if(app_id !== countlyCommon.ACTIVE_APP_ID){
+                // but it is not currently selected app, so let' switch
+                countlyCommon.setActiveApp(app_id);
+                $("#active-app-name").text(countlyGlobal["apps"][app_id].name);
+                $("#active-app-icon").css("background-image", "url('" + countlyGlobal["path"] + "appimages/" + app_id + ".png')");
+            }
+        }
+        else{
+            //add current app id
+            Backbone.history.noHistory("#/"+countlyCommon.ACTIVE_APP_ID + Backbone.history._getFragment());
+        }
+    })();
+}
 var app = new AppRouter();

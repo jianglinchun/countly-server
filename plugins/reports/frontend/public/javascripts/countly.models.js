@@ -2,7 +2,7 @@
 
     //Private Properties
     var _data = {};
-
+    var _emailList = [];
     //Public Methods
     countlyReporting.initialize = function (id) {
 		return $.ajax({
@@ -13,11 +13,39 @@
                 "app_id": countlyCommon.ACTIVE_APP_ID
 			},
 			success:function (json) {
+                if(json.length > 0){
+                    for(var i = 0; i < json.length; i++){
+                        json[i].title = json[i].title ? json[i].title : ''; 
+                        json[i].enabled = json[i].enabled ? true : false;
+                    }
+                }
 				_data = json;
 			}
 		});
     };
+
+    countlyReporting.requestEmailAddressList = function () {
+		return $.ajax({
+			type:"GET",
+			url:countlyCommon.API_PARTS.data.r+"/reports/email",
+			data:{
+				"api_key":countlyGlobal.member.api_key,
+                "app_id": countlyCommon.ACTIVE_APP_ID
+			},
+			success:function (json) {
+				_emailList = json;
+			}
+		});
+    };
     
+    countlyReporting.getEmailAddressList = function(){
+        var data = [];
+        _emailList.forEach(function(item){
+            data.push({name:item.email, value: item.email})
+        })
+        return data;
+    }
+
     countlyReporting.getData = function(){
         return _data;
     }
@@ -69,5 +97,24 @@
             }
         });
     };
-	
+    
+    countlyReporting.updateStatus = function (args) {
+		return $.ajax({
+            type:"GET",
+            url:countlyCommon.API_PARTS.data.w+"/reports/status",
+            data:{
+				"api_key":countlyGlobal.member.api_key,
+				args:JSON.stringify(args)
+            }
+        });
+    };
+
+    countlyReporting.getReport = function (id){
+        for(var i = 0; i < _data.length; i++){
+            if(_data[i]._id === id){
+                return _data[i];
+            }
+        }
+        return null;
+    }
 }(window.countlyReporting = window.countlyReporting || {}, jQuery));

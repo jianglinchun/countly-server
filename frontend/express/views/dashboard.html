@@ -11,7 +11,7 @@
 <head> 
 	<title><%- countlyTitle %></title> 
     <script><%- javascript %></script>
-	<link rel="icon" type="image/png" href="<%- cdn %>images/favicon.png">
+	<link rel="icon" type="image/png" href="<%- cdn %><%- countlyFavicon %>">
     <script type="text/javascript">
         window.paceOptions = {
             ajax: {
@@ -90,6 +90,10 @@
 <body>
 	<div id="top-bar">
 		<div class="logo-container">
+			<!--
+			Community Edition license doesn't include the right to remove Countly branding.
+			If you wish to implement your own branding (e.g. your own logo, colors, etc.), you must license Countly Enterprise Edition.
+			-->
 			<div class="logo"></div>
 		</div>
 		<div class="left-menu">
@@ -126,8 +130,8 @@
 							<div class="api_key">
 								<div data-localize="sidebar.api_key">
 								</div>
-								<div id="user_api_key_item">
-									<%= member.api_key %>
+                                <div id="user_api_key_item">
+                                    <input value="<%= member.api_key %>" readonly=true type="text"/>
 								</div>
 							</div>
 						</span>

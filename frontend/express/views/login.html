@@ -10,7 +10,7 @@
 <html>
 <head>
 	<link href='stylesheets/pre-login/main.css' rel='stylesheet' type='text/css'>
-	<link rel="icon" type="image/png" href="images/favicon.png">
+	<link rel="icon" type="image/png" href="<%- countlyFavicon %>">
     <% if (themeFiles && themeFiles.css) { %>
         <% for(var i=0, l=themeFiles.css.length; i<l; i++) {%>
     <link href='<%= themeFiles.css[i]%>' rel='stylesheet' type='text/css'>
@@ -59,6 +59,10 @@
 	</div>
 	<div id="login-form">
 		<div style="overflow:auto;">
+			<!--
+			Community Edition license doesn't include the right to remove Countly branding.
+			If you wish to implement your own branding (e.g. your own logo, colors, etc.), you must license Countly Enterprise Edition.
+			-->
             <div id="login-logo" style="margin-bottom:30px;"></div>
             <form method="POST">
                 <div>

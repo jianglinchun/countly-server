@@ -63,8 +63,10 @@ var appsApi = {},
     };
     
     appsApi.getAppsDetails = function (params) {
-        if(params.app.owner)
+        if(params.app.owner){
+            params.app.owner_id = params.app.owner;
             params.app.owner = common.db.ObjectID(params.app.owner+"");
+        }
         common.db.collection('app_users'+params.qstring.app_id).find({}, {ls:1, _id:0}).sort({ls:-1}).limit(1).toArray(function(err, last) {
             common.db.collection('members').findOne({ _id: params.app.owner }, {full_name:1, username:1}, function(err, owner) {
                 if(owner){
@@ -122,6 +124,7 @@ var appsApi = {},
         newApp.created_at = Math.floor(((new Date()).getTime()) / 1000);
         newApp.edited_at = newApp.created_at;
         newApp.owner = params.member._id+"";
+        newApp.seq = 0;
 
         common.db.collection('apps').insert(newApp, function(err, app) {
             var appKey = common.sha1Hash(app.ops[0]._id, true);
@@ -131,7 +134,6 @@ var appsApi = {},
             newApp._id = app.ops[0]._id;
             newApp.key = appKey;
 
-            common.db.collection('app_users' + app.ops[0]._id).insert({_id:"uid-sequence", seq:0},function(err,res){});
             common.db.collection('app_users' + app.ops[0]._id).ensureIndex({ls:-1},function(err,res){});
             common.db.collection('metric_changes' + app.ops[0]._id).ensureIndex({ts:-1},function(err,res){});
 			plugins.dispatch("/i/apps/create", {params:params, appId:app.ops[0]._id, data:newApp});
@@ -289,6 +291,7 @@ var appsApi = {},
     }
 
     function deleteAllAppData(appId, fromAppDelete, params, app) {
+        common.db.collection('apps').update({'_id': common.db.ObjectID(appId)}, {$set:{seq:0}}, function(){});
         common.db.collection('users').remove({'_id': {$regex: appId + ".*"}},function(){});
         common.db.collection('carriers').remove({'_id': {$regex: appId + ".*"}},function(){});
         common.db.collection('devices').remove({'_id': {$regex: appId + ".*"}},function(){});
@@ -310,9 +313,6 @@ var appsApi = {},
             });
         }
         common.db.collection('app_users' + appId).drop(function() {
-            if (!fromAppDelete) {
-                common.db.collection('app_users' + appId).insert({_id:"uid-sequence", seq:0},function(){});
-            }
             if (!fromAppDelete){
                 if(params.qstring.args.period == "reset")
                     plugins.dispatch("/i/apps/reset", {params:params, appId:appId, data:app}, deleteEvents);

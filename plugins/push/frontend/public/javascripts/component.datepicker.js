@@ -11,88 +11,101 @@ window.component('datepicker', function(datepicker) {
 			return new datepicker.controller(opts);
 		}
 		this.opts = opts;
-		this.value = opts.date;
+		this.value = opts.value;
+		this.date = m.prop(opts.defaultDate ? new Date(opts.defaultDate.getTime()) : new Date());
 		this.open = opts.open || m.prop(false);
-		this.tz = opts.tz;
 		this.valueFormatter = opts.valueFormatter || function(d) { return moment(d).format('DD.MM.YYYY, HH:mm'); };
 		this.disabled = opts.disabled || function(){ return false; };
 
-		// if (!this.value() && opts.defaultDate) {
-		// 	this.value(opts.defaultDate);
-		// }
-
-		this.hours = function(v) {
-			if (this.value()) {
-				if (v) {
-					if (this.value() && !isNaN(parseInt(v))) {
-						this.value().setHours(parseInt(v));
-						return parseInt(v);
-					}
-				} else {
-					return this.value().getHours();
-				}
+		this.setHours = function(v){
+			v = parseInt(v);
+		
+			if (isNaN(v)) {
+				return;
 			}
-			return new Date().getHours();
+
+			this.date().setHours(Math.max(0, Math.min(23, v)));
 		}.bind(this);
 
-		this.minutes = function(v) {
-			if (this.value()) {
-				if (v) {
-					if (this.value() && !isNaN(parseInt(v))) {
-						this.value().setMinutes(parseInt(v));
-						return parseInt(v);
-					}
-				} else {
-					return this.value().getMinutes();
-				}
+		this.setMinutes = function(v){
+			v = parseInt(v);
+
+			if (isNaN(v)) {
+				return;
 			}
-			return 0;
+
+			this.date().setMinutes(Math.max(0, Math.min(59, v)));
 		}.bind(this);
 
-		this.ontz = function(ev) {
-			if (ev && ev instanceof MouseEvent && ev.target.tagName.toLowerCase() === 'input') {
-				return true;
-			}
-			this.tz(!this.tz());
-			return true;
+		this.hours = function(){
+			return ('00' + this.date().getHours()).slice(-2);
+		};
+
+		this.minutes = function(){
+			return ('00' + this.date().getMinutes()).slice(-2);
+		};
+
+		this.apply = function(ev){
+			ev.stopPropagation();
+			this.value(new Date(this.date().getTime()));
+			this.open(false);
+		}.bind(this);
+
+		this.clear = function(ev){
+			ev.stopPropagation();
+			this.value(undefined);
+			this.open(false);
 		}.bind(this);
 
 	};
 
 	datepicker.view = function(ctrl){
-		return m('.comp-datepicker' + (ctrl.opts.class ? '.' + ctrl.opts.class : ''), {class: ctrl.open() ? 'active' : ''}, [
-			m('.comp-datepicker-head', ctrl.disabled() ? {} : {onclick: ctrl.open.bind(ctrl, !ctrl.open())}, [
-				m('svg[width=17][height=15]', [
-					m('rect[x="4"][y="0"][fill="#AAAAAA"][width="1.6"][height="3.5"]'),
-					m('rect[x="11.3"][y="0"][fill="#AAAAAA"][width="1.6"][height="3.5"]'),
-					m('rect[x="3.2"][y="5.3"][fill="#AAAAAA"][width="2.4"][height="2.6"]'),
-					m('rect[x="7.3"][y="5.3"][fill="#AAAAAA"][width="2.4"][height="2.6"]'),
-					m('rect[x="11.3"][y="5.3"][fill="#AAAAAA"][width="2.4"][height="2.6"]'),
-					m('rect[x="3.2"][y="9.7"][fill="#AAAAAA"][width="2.4"][height="2.6"]'),
-					m('rect[x="7.3"][y="9.7"][fill="#AAAAAA"][width="2.4"][height="2.6"]'),
-					m('rect[x="11.3"][y="9.7"][fill="#AAAAAA"][width="2.4"][height="2.6"]'),
-					m('path[fill="none"][stroke="#AAAAAA"][stroke-width="1"][d="M2,0.9h13c1.1,0,2,0.9,2,2V13c0,1.1-0.9,2-2,2H2c-1.1,0-2-0.9-2-2V2.9C0,1.8,0.9,0.9,2,0.9z"]')
-				]),
-				// m('img[src="/images/ico.cal.png"]'),
+		return m('.comp-datepicker' + (ctrl.opts.class ? '.' + ctrl.opts.class : ''), 
+		{
+			class: ctrl.open() ? 'active' : '',
+			config : function(elm){
+				$(window).unbind('click.' + ctrl.opts.id).bind('click.' + ctrl.opts.id,  function(e){
+					var container = $(elm);
+					if (container && !container.is(e.target) && container.has(e.target).length === 0) {
+                        ctrl.open(false);
+                    }
+				});
+			}
+		}, [
+			m('.comp-datepicker-head', {onclick: function(ev) {
+				if (ctrl.opts.onclick) {
+					ctrl.opts.onclick(ev);
+				}
+				ctrl.open(!ctrl.open());
+			}}, [
+				m('i.material-icons', {}, 'date_range'),
 				ctrl.value() ? 
 					m('span.formatted', ctrl.valueFormatter(ctrl.value())) :
 					m('span.formatted', t('datepicker.dt.click')),
 				m('span.ion-chevron-down'),
 			]),
-			m('.picker', [
+			m('.picker', {
+				class : ctrl.opts.position === "top" ? "on-top" : "",
+				config: function(element, isInitialized) {
+					if (!isInitialized) {
+						var parent = element.parentElement.clientWidth || 180;
+						element.style['margin-left'] = (parent - 205 - 10) + 'px';
+					}
+				}
+			}, [
 				m('.comp-datepicker-ui-picker', {config: datepicker.config(ctrl)}),
 				m('.comp-datepicker-time', [
-					m('span.comp-datepicker-time-label', 'Time'),
-					m('input[type=number][min=0][max=23]', {value: ctrl.hours(), oninput: m.withAttr('value', ctrl.hours)}),
+					m('span.comp-datepicker-time-label', t('datepicker.pick-time') + ': '),
+					m('input[type=number][min=0][max=23]', {value: ctrl.hours(), oninput: m.withAttr('value', ctrl.setHours)}),
 					m('span.comp-datepicker-time-spacer', ':'),
-					m('input[type=number][min=0][max=59]', {value: ctrl.minutes(), oninput: m.withAttr('value', ctrl.minutes)})
+					m('input[type=number][min=0][max=59]', {value: ctrl.minutes(), oninput: m.withAttr('value', ctrl.setMinutes)})
 				]),
-				ctrl.tz ? 
-					m('.comp-datepicker-tz', {onclick: ctrl.ontz}, [
-						m('input[type=checkbox]', {onclick: ctrl.ontz, checked: ctrl.tz() ? 'checked' : undefined, onchange: ctrl.ontz}),
-						m('label', t('datepicker.tz'))
+				m('.comp-datepicker-apply', [
+					m('div', [
+						m('.icon-button.dark', { onclick: ctrl.clear }, t('datepicker.clear')),
+						m('.icon-button.green', { onclick: ctrl.apply }, t('datepicker.apply'))
 					])
-					: ''
+				])
 			])
 		]);
 	};
@@ -103,6 +116,8 @@ window.component('datepicker', function(datepicker) {
 				if (!isInitialized) {
 					$(element).datepicker({
 						defaultDate: ctrl.opts.defaultDate,
+						minDate: ctrl.opts.minDate,
+						maxDate: ctrl.opts.maxDate,
 						numberOfMonths:1,
 						showOtherMonths:true,
 						minDate:new Date(),
@@ -118,7 +133,7 @@ window.component('datepicker', function(datepicker) {
 							}
 
 							m.startComputation();
-							ctrl.value(date);
+							ctrl.date(date);
 							m.endComputation();
 						}
 					});
