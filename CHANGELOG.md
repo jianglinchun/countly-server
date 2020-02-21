@@ -1,3 +1,876 @@
+## Version 19.08.1
+
+**Fixes**
+* [EChartMap] refactor library loading
+* [EchartMap] fixed date change refresh bug
+* [api] fixed i/tasks/name - calling correct function
+* [api] fixed total user correction for server side models
+* [api] increase user count in aggregated data for country when country changes
+* [crashes] fixed crash menu arrow
+* [crashes] update minidump
+* [events] fixed getting undefined _activeEvent in some situations
+* [events] fixed issue with hiding/showing event whan there is '.' in event name
+* [events] fixed issue with matching events in frontend if their keys have special symbols like "&" in them
+* [frontend] changed duration display format
+* [frontend] fixed check for admin apps (some sections that should be shown to admin, where not visible)
+* [frontend] fixed chrome autofill prevention
+* [frontend] fixed countries screen color problem
+* [frontend] fixed keeping filtered events after changing segments
+* [frontend] fixed localization for visits in top
+* [frontend] fixed total user correction in 0 cases
+* [frontend] fixed unknown country check
+* [frontend] fixed uploading app icon on first app screen
+* [frontend] fixes for 0 values having colors on the map
+* [frontend] improved Internet Explorer 11 support
+* [logger] let large texts scroll in table cell
+* [prelogin] fixed issue with showing messages in forgot page
+* [push] GCM Deprecation
+* [push] included in data migration
+* [push] show only for mobile type
+* [scripts] fixed db upgrade script running as separate script
+* [sdk] updated bundled Web SDK
+* [views] view deletion added in systemlogs
+
+**Enterprise fixes**
+* [attribution] prevent user from creating campaign ID with " or '
+* [cohorts] cohort drawer ui bugs fixed
+* [concurrent_users] fixed alerts table
+* [crash_symbols] order the symbols when fetching to always use last symbol if multiple same symbols provided
+* [crashes-jira] fixed check for correct crashes view
+* [dashboards] fixed user estimation correction in custom dashboards
+* [drill] fixed country map bugs
+* [drill] fixed punchcard value formatting
+* [funnels] fixed delete multiple rows bug
+* [funnels] fixed dragging steps only by drag handler
+* [restrict] css fix for hiding menus
+* [users] also validate funnel step segmentation
+* [users] fix custom column selection bugs
+
+**Enterprise Improvements**
+* [cohorts] added configuration to control minimal cohort regeneration time
+* [concurrent_users] added legacy live plugin endpoint support
+* [drill] return undefined values too in BY queries
+* [users] added cursor pointer on view message button
+* [users] updated to use long name and value transformations for custom selected fields
+
+## Version 19.08
+
+**Fixes**
+* [api] fixed error on deleting user with exported data
+* [api] improved tops speed with aggregation pipeline
+* [app_versions] fixing displaying empty state
+* [assistant] handling case, when document could not be read
+* [browser] correctly convert metric to collection for correct data
+* [configs] display correct values in app configuration after save
+* [events] fixed event overview incorrectly formats duration
+* [frontend] added configuration element for google maps api key
+* [frontend] correct event total calculation for segmented view of aggregated data
+* [frontend] fixed Drop throws error when datatable is empty
+* [frontend] fixed japanese locale dates
+* [frontend] fixed refreshing total user correction for today
+* [frontend] reduced session extend calls.
+* [loyalty] fix table ordering
+* [push] Correct system log on push credentials update error
+* [push] Fixing populator creating messages for wrong app
+* [slipping-away] fix fetch user list bug
+* [source] fixed localization key in configs
+* [star-rating] lots of bug and ui fixes
+* [ui] Fixing expand row icon switches on refresh
+* [ui] changed email reports % colors.
+* [ui] disabling annoying chrome autocomplete
+* [ui] fix bug with Ubuntu font on Windows
+* [ui] prevent double scrolling
+* [ui] set app title attribute when switching apps
+* [ui] users and new users country sorting problem resolved
+* [views] fixes with tokens expiring when viewing heatmaps
+
+**Enterprise fixes**
+* [attribution] encode link if it is not a custom scheme
+* [attribution] fixed using last campaign urls when creating new campaign
+* [block] fixed creating empty users for new blocked users
+* [cohorts] fixed editing cohorts with big lists
+* [cohorts] handle empy user sets correctly and more efficiently
+* [dashboards] block all popups for dashboard image rendering in emails
+* [dashboards] fixed sending email reports if creator is deleted
+* [dashboards] improve screenshot rendering speed with cache for emails
+* [drill] actions button avaialble without query
+* [drill] better bucket and value selection for report manager data
+* [drill] big list values are not selected when replaying query bugfix
+* [drill] cohorts querying fixes
+* [drill] correct user count for multi BY queries
+* [drill] fixed generating month ticks for more than 1 year
+* [drill] query performance improved with new indexes
+* [flows] fix flows logic bug about app data clearing
+* [flows] fix views event logic bug
+* [funnels] allow to create funnels without events but with views
+* [funnels] fixed editing funnels with grouping elements
+* [funnels] top percentage update bug fixed
+* [groups] add uppercase to allowed characters for name and group id
+* [revenue] fix updating overview widget on period changes
+* [whitelabeling] replacement of word Countly with company name in all localized strings
+
+**New Features**
+* [api] allow updating multiple app users
+* [applications] application lock mechanism
+* [authorization] tokens now support url parameters as limits
+* [crashes] multi thread error support
+* [crashes] new crash stack processing for android and javascript
+* [crashes] new dropdown menu UI in crash groups
+* [dbviewer] added custom field support to dbviewer sort
+* [events] display top events for event overview
+* [frontend] option to delete your own account
+* [plugins] asynchronously check plugin enabling/disabling procedure
+* [push] Adding push events to user’s timeline
+* [push] allow building target audience just before scheduled date
+* [push] option to view recipients of a push
+* [push] proxy authentication support
+* [push] real-time event triggered push notifications
+* [report-manager] smarter more often regenerating automatic reports
+* [security] added password secret salt support in configuration file
+* [slipping-away-users] add flexible periods setting support
+* [two-factor-auth] enable two factor authentication through Microsoft or Google authenticator apps
+* [ui] added native tab behaivor to cly-select element
+* [ui] allow uploading dashboard profile pictures
+* [ui] customize graph colors through config file
+* [ui] moved some management tools to top menu
+* [ui] new graph note system
+* [ui] new menu design
+* [ui] new prelogin page design
+* [views] select columns to display functionality
+
+**New Enterprise Features**
+* [ab-testing] new plugin to perform AB testing
+* [attribution] allow providing custom domain for campaign links
+* [attribution] allow reattribution
+* [concurrent_users] new and more performant and detailed version of live plugin
+* [crash_symbolication] support for native crashes and symbolication
+* [crashes-jira] plugin to tie caught crashes with JIRA issues
+* [drill] make Drill configuration on app level
+* [formulas] new plugin to perform arithmetical computations on selected metrics
+* [funnels] allow sorting steps by drag and drop when editing funnels
+* [geo] Allowing float as geo radius
+* [users] added region support
+* [users] select columns to display functionality
+
+**Development related**
+* [api] moved account deletion to backend api.
+* [api] provide cancel request on app not exists
+* [api] refactored getPeriodObj
+* [cmd] added new upgrade subcommands for automatic multiple version upgrades
+* [cmd] script to upgrade countly to ee
+* [cmd] use password prompt to mask sensitive data
+* [common] add email for validation
+* [configs] improved config parsing and usage
+* [configs] more session and cookie settings in config file
+* [core] Increasing default heap size to 2Gb for API
+* [crashes] make crash identification model independent
+* [db] log incorrect Object ID to info level
+* [example] AWS SES - Simple Email Service example
+* [example] nginx example config of blocking access outside intranet
+* [frontend] redirect rather than render on POST processing
+* [frontend] replaced old google library loader with new version
+* [frontend] set cookie only when theme is customizable on user level
+* [frontend] trust estimation correction more than new users data
+* [members] moved all member functions to single separate members utility
+* [scripts] allow countly user to enable plugins
+* [scripts] correctly backup nginx config on ubuntu
+* [scripts] update_translation.js perfs and reliability boost
+* [security] HTML escaping in all localized strings
+* [security] remove flash cross domain policy
+* [taskmanager] no need to decode html (breaks json parsing)
+* [tests] additional way to parse CSRF from body in case of minified html
+* [ui] new menu management system
+* [ui] updated font awesome lib
+
+## Version 19.02.1
+
+**Fixes**
+* [alerts] fixed compare value bug
+* [assistant] fixed callback in case of failure to fetch rss feed
+* [crashes] additional checks for database failures
+* [data] fixed none tracking mode
+* [frontend] allow to use device_list on server side too
+* [frontend] fixed missing texts for formatSecond
+* [frontend] handle logout GET with redirect just in case
+* [push] fixed credentials setting validation
+* [star-rating] created separate filter popup for comments and ratings tab
+* [star-rating] trigger_button_text field problem solved
+
+**Enterprise fixes**
+* [attribution] do the regex check on click matching instead of direct match
+* [attribution] fixed encoding redirect url
+* [cohorts] fixed period check
+* [crash_symbolication] fixed api checks and texts
+* [drill] fixed BY query for array properties
+* [drill] fixed jumping order of BY properties
+* [remote-config] correctly check for parameter length
+* [remote-config] fixed for boolean values
+* [users] correctly check for number type when displaying user properties
+
+**New Features**
+* [frontend] add css class to #content based on route name
+* [frontend] add css class to body based on selected language
+* [populator] mark users generated with populator by custom property
+
+**Development related**
+* [ide] added a project editorconfig file
+* [log] do not log failed CSRF checks
+* [sdk] updated web and nodejs sdks
+
+## Version 19.02
+
+**Fixes**
+* [alerts] change crash checking to once per hour
+* [api] limit loading meta data for events with high cardinality in segments
+* [api] make sure session duration increments are always numbers
+* [api] parse events only if needed
+* [api] properly delete app images on app delete
+* [api] record session frequency by sessions, not users
+* [compare] fixed bug with returning result
+* [compare] fixed missing icons
+* [compliance-hub] ui table trim longer device_ids
+* [config] fixed config extender not working with underscore or camelcase properties
+* [crashes] do not format app version
+* [crashes] do not return list if there are too many crashes
+* [crashes] fixed hidden comments
+* [crashes] properly refresh stacktrace with markup
+* [dashboard] fixed changing password
+* [dashboard] fixed sorting in some serverside tables
+* [dashboard] make age of unauthorized sessions much shorter
+* [dashboard] move app versions legend to the bottom
+* [data-migration] fixed click menus disappearing
+* [db] correctly replace database name
+* [db] fixed overriding poolsize in some cases
+* [frontend] fix when isoweek falls for the year in which it has thursday
+* [frontend] parse values as number when calculating percentage change
+* [frontend] server svg files with correct encoding
+* [monetization] crash bug when year is selected
+* [overview] fixed geo chart when date change
+* [push] respect restricted access rules
+* [reports] UI and table sorting fixes
+* [reports] allow manual data refresh for auto refresh tasks
+* [reports] allow rerunning tasks on http redirect settings
+* [reports] fix reports hour logic bug
+* [reports] removed the date picker from report manager
+* [screenshots] fixed ssl issue resolving
+* [security] add global $ handler in keys
+* [security] escape html in popups
+* [security] more proper error handling to prevent unwanted states
+* [server-stats] fix event count calculation
+* [slipping-away-users] use time of last api call instead of last session
+* [star-rating] fixed timestamp
+* [systemlogs] change comparison was recording too much
+* [systemlogs] exprot file name fix
+* [ui] correct flag sizes
+* [web] fixed error in pixel tracking passing user agent and added tests
+
+**Enterprise fixes**
+* [attribution] optimizations for large click amount
+* [attribution] proper back behavior
+* [dashboards] fixed email subjects
+* [dashboards] remove current users from the edit view permission list
+* [dashboards] users list fix
+* [drill] Bug switching to hourly format on 7days
+* [drill] allow disabling meta recording
+* [drill] get correct user count in BY queries
+* [drill] handling paralel view duration updates
+* [flows] update for query performance
+* [funnels] fixed using correct minimal ts for each step
+* [groups] fixed output closed and null issues
+* [groups] fixed section restriction not showing in some cases
+* [heatmaps] are now not tied to view name (can use custom view names)
+* [push] Drill loading fix for no users case
+* [revenue] fixed loading data in app configuration
+
+**New Features**
+* [alert] allow sharing with multiple email addresses
+* [api] Allow to delete multiple app users with force flag
+* [api] add region from geoip lite module
+* [api] added ability to upload app icon via API
+* [api] allow pausing receiving app data
+* [dashboard] bruteforce 0 attempts disabled bruteforce protection
+* [dashboard] change /logout api method from GET to POST
+* [dashboard] move to auth tokens
+* [dashboard] send link to authenticate user on different cases (time ban, password change)
+* [dashboard] use POST in most cases instead of GET
+* [dashboard] use argon2 for password hashing
+* [data-points] show data for larger periods
+* [dbviewer] add countly_fs and countly_out to list of databases too
+* [dbviewer] aggregation support
+* [dbviewer] reload data instead of whole view
+* [feedback] added systemlogs for widget create, edit and remove processes
+* [frontend] add rate limiting and configuration for it
+* [frontend] added more configuration options to version.info file
+* [frontend] allow controling language list from specific config file
+* [logger] log all canceled requests too
+* [loyalty] new loyalty view
+* [overview] faster top bar loading when it is high cardinality segment
+* [populator] add utm data generation
+* [push] ability to edit a automated push notification
+* [push] clear credentials on app reset
+* [push] close emoticon dialog on ESC key
+* [push] email notifications on push auto message fails
+* [push] new alert dialogs for errors
+* [push] proxy support
+* [remote-config] allow remote configuration for apps with SDK
+* [security] configurable session secret
+* [sources] add source character limitation configuration
+* [ui] added dropdown icons
+* [ui] first app creation dialog
+* [views] add column configuration
+* [views] added page scroll percentage numbers (avg)
+* [views] allow deleting views
+* [views] performance improvements for handling more views
+* [views] select which fields to show in table
+
+
+**New Enterprise Features**
+* [block] allow blocking internal events
+* [cohorts] allow segmenting user properties separately
+* [cohorts] allow to use location in user property query
+* [crashes] add crash name as drill segment
+* [dashboards] added systemlogs for dashboard and widget create, edit and remove
+* [dashboards] cohort widget
+* [drill] allow contains search on fields
+* [drill] drill data based estimation correct for users in overview and other sections (including previous period)
+* [drill] multiple by fields are allowed
+* [drill] new ui for querying
+* [drill][flows][funnels] do not cache if amount of data is low
+* [funnels] option for funnel start all users or entered users
+* [funnels] separate each step segmentation
+* [heatmaps] additional resolution options added
+* [retention_segments] Addd event based retention data
+* [users] column configuration for users table
+* [users] display notes about users on hover in the table
+
+**Development related**
+* [api] add event for plugins to convert metric to collection data
+* [api] added api to return internal-events
+* [api] changed api key generation logic
+* [api] correct error states for APIcallback
+* [api] more multi purpose top fetching
+* [api] multiple metric refactoring and fixes
+* [api] respong only after app check
+* [cmd] healthcheck additions and fixes
+* [common] fixed countlyCommon.formatSecond() method
+* [db] adding country metric index for faster overview load
+* [db] ignore handled errors like duplicate index inserts
+* [db] implement basic collection cache
+* [db] improved logging
+* [db] properly log arguments
+* [db] provide a way to load database specific configs based on database name
+* [db] update compatability layer due to driver changes
+* [db] use count instead of aggregation for total users
+* [db] use estimated count when possible
+* [eslint] single config file and fixes
+* [frontend] add common.db reference for consistency with api process
+* [frontend] add constraints to unique fields like email
+* [frontend] add countlyCommon.getPeriodRange function
+* [frontend] fixed regex for page/refresh scripts
+* [groups] added group id for groups.
+* [nginx] increase worker file and connection limits
+* [nginx] provide https template
+* [package] remove bad dependencies
+* [package] remove kerberos support
+* [populator] add crash name property
+* [ui] allow cly dropdown to open up instead of down too
+* [upgrade] backup configs properly
+* [vagrant] modified Vagrantfile to provision development VM with 2048 MB memory
+
+## Version 18.08.2
+
+**Fixes**
+
+* [api] added support for ports and brackets in ip addresses
+* [api] added support for partial ip address as masks in ignoreProxy config
+* [api] check correctly for finished none http requests
+* [api] deeper escaping of objects
+* [api] fixes for handling unparsable period
+* [api] more error checks and handling
+* [api] regular expression checks
+* [appmanagement] load configuration on new app(on new server)
+* [config] fixes for relative path changes
+* [crashes] fix escaping in crash error and stacktrace
+* [crashes] improve search index
+* [crashes] improved type check
+* [data-migration] log redirect url in logger
+* [db]fixed replacement of db name in mongodb connection string
+* [events] updated compare_arrays function for events to have more checks if both passed are arrays
+* [feedback] device_id fix and script for correcting data
+* [frontend] correctly genersate ticks for month buckets
+* [frontend] fix not using data on init for today period
+* [frontend] fix title if not available
+* [install] fix permission issue
+* [logger] improve info column formatting
+* [nginx] remove server flag
+* [populator] fixed campaign session issue for web apps in populator
+* [push] Deny APN app settings update if no file is selected
+* [push] Fix for race condition in message status updates
+* [push] Fix for upload of APN credentials from windows / no mime-aware systems
+* [security] more cross site scripting preventions
+* [slipping-away-users] fix style issue
+* [systemlogs] fixed system logs plugin table sorting issue
+* [ui] drop down fix
+* [ui] fixed "Email value too long" issue.
+
+
+**Enterprise fixes**
+
+* [drill] correctly check projection key result type
+* [drill] fix filter render bug
+* [drill] fix switching bucket UI
+* [push] Approver update
+* [recaptcha] scroll fix on login screen
+* [revenue] use user estimation correction
+
+**New Features**
+* [api] support for multiple errors message
+* [server-stats] display datapoints for admins and users too
+
+**New Enterprise Features**
+* [dashboard] disabling sharing dashboards
+* [drill] added no_map param to display plain country data
+
+## Version 18.08.1
+
+**Fixes**
+
+* [assistant] fixed browser side error with a empty server
+* [config] switch buttons resized
+* [core] fixed bug when admin can't edit apps in some cases
+* [docker] added countly-core docker image without mongodb
+* [docker] improved environment variable based configuration
+* [enterprise] make sure drill library loads before cohorts and funnels
+* [events] fixed padding on selectize items(omit segment)
+* [jsdoc] updated doc template
+* [plugins] use POST app config update instead of GET
+* [push] UI fixes
+* [push] fixed for p12 credentials upload resulting in unknown error
+* [push] improved geolocations support
+* [sdk] install udpated version of web sdk
+* [upgrade] improved checks in mongodb upgrade scripts
+
+## Version 18.08
+
+**Fixes**
+
+* [api] fixed some metrics double prefixing on request restarts
+* [api] handle concurrent user creations
+* [api] handle some edge cases and log instead of crashing
+* [api] more fixes to post user merging
+* [assistant] fixed issue with assistant button that was appearing with delay
+* [configuration] session_timeout is now in minutes and not mili seconds
+* [data_migration] fixes and improvements to ui and process
+* [db] process connection string for replica sets in singleDefaultConnect method
+* [dbviewer] fix viewing documents with / in the _id field
+* [device_list] properly decode some values
+* [core] fixed exports for server side tables
+* [core] log user out only on updated password
+* [core] sort engagement graphs by bucket not by amount
+* [crashes] adding indexes for server side table performance
+* [crashes] fixed public crash page bugs
+* [crashes] fixed user merge bug
+* [errorlogs] made errorlogs 360.14 times faster
+* [events] fixed issue with not refreshing in overview and editing events
+* [logger] do not decode HTML (prevent injection)
+* [plugin-upload] try to apply recovery only once
+* [push] Improved message queue
+* [push] Missing tzs fix
+* [reports] fixed email input field
+* [security] force password complexity settings on password reset
+* [security] prevent XSS on some input fields
+* [ui] added message for expired CSRF tokens: Your session was expired. Please login again
+* [ui] fixed active tab styles
+* [ui] fixed export dialog on iPad and Chrome
+* [ui] fixed scrolling on submenus
+* [ui] show scroll bar on scrollable content
+* [ui] trend indicator for positive/negative trends in context
+* [web] show unknown flag
+
+**New Features**
+
+* [api] reload config periodically (instead of on each request)
+* [apps] new ui for app configurations
+* [apps] allow overwriting some global server configurations on app level
+* [configuration] added enabling/disabling metric changes setting to configs
+* [configuration] added functionality to provide dashboard user level settings to allow changing theme
+* [core] added dashboard authorization with tokens
+* [core] medium independent request processor (can pass request data in any way and protocol wanted)
+* [crashes] added new tab in crashes overview page: crashes per session
+* [data-migration] added endpoint to allow import on previously uploaded file
+* [device_list] update devices and add amazon devices
+* [dbviewer] added collection search
+* [dbviewer] easier browsable single documents
+* [dbviewer] new query ui design
+* [dbviewer] switch between apps dropdown, to display information for single specific app
+* [EChartMap] add EChartMap for Country view replacement for servers without Google services
+* [examples] added tcp server example to demonstrate custom data processing
+* [ratings] new functionality through multiple widgets and providing feedback
+* [frontend] added year to ticks that span across multiple years
+* [frontend] duplicate API request cancelation from dashboard
+* [frontend] request cancelation on view and app switches
+* [logger] added event log collection capped status and warning
+* [logger] check and validate required crash parameters
+* [logger] show request received and request time in different columns
+* [logger] do not refresh table if row is opened
+* [mail] send warning/information on timeban via email
+* [management] added new section for plugin app configurations
+* [management] show if user has time ban and allow removing it
+* [onboarding] plugin showing of new features
+* [populator] heatmap & scrollmap / feedback data generation support
+* [reportmanager] added manual and auto updated reports
+* [reportmanager] added private and global reports
+* [reports] allow other plugins to add more reports
+* [server-stats] allow look n month back via api
+* [server] remove server version info from nginx
+* [slipping-away] update table style
+* [tokens] added api option to limit tokens to specific endpoints
+* [tokens] added token managament UI for user menu
+* [ui] add visual cue for expandable rows
+* [ui] added external links for tables where rows open new views
+* [ui] adjust event name length
+* [ui] auto expand left navigation (in events, apps, funnels etc.)
+* [ui] new confirmation popups with more information
+* [ui] new design for App Details popup
+* [ui] new overview bar design
+* [ui] smarter behavior for back buttons
+
+**Enterprise Edition fixes**
+
+* [attribution] improvements to postback redirection
+* [attribution] optimized campaign view with server side pagination, by showing all data for all periods in campaign tables
+* [cohorts] handle removed events and properties correctly
+* [drill] do not automatically convert event segments and custom user properties to big lists
+* [drill] fix data table export bug
+* [drill] fix reapplying query with big list values that are not in initial list
+* [drill] fix displaying user list when cohorts are in query
+* [funnels] added API average time between steps
+* [funnels] fixes on total user calculation
+* [funnels] improved unordered event processing
+* [funnels] fixed text cutoff problem for funnels
+* [push] showing dropdown for push on single user profiles
+* [revenue] added to new events table design to select/unselect IAP events
+* [white-labeling] showing default color(hex) as placeholder
+
+**Enterprise Edition features**
+
+* [attribution] support the same behavior for desktop as mobile
+* [block] change ui to new drawer
+* [crash_symbolication] adding reminder for missing mapping files.
+* [crash-symbolication] improved empty symbol table styling
+* [crash_symbolication] updated table indicator by taking into account which platforms are used in the current app
+* [dashboards] added more widget types for retention, views, times of day, etc
+* [dashboards] allow plugins adding more widgets
+* [dashboards] create screenshots of dashboard for email reports
+* [drill] API support multiple projection keys
+* [drill] BY query result pagination
+* [drill] allow to save results in report manager
+* [drill] new actions menu in drill
+* [flows] added view support for flows
+* [flows] update different no data messages for Events & Views
+* [funnels] multi step segmentation support
+* [retention_segments] improved retention UI
+* [retention_segments] providing multiple retention types: Full, Classical, Unbounded
+* [users] added filter for Events timeline
+* [users] added labels for Events timeline
+* [users] correct segment name description in Events timeline
+* [users] custom properties handle timestamps as date, including future ones
+* [users] display duration for each funnel step
+
+**Development related**
+
+* [api] /i events now waits on promise resolvement
+* [api] allow omitting segments of internal events
+* [api] log traces on unhandled errors
+* [cmd] basic health check
+* [common] autoscale y axis graph ticks
+* [common] handle seperate periods in browser
+* [components] added vue.js for common subview components
+* [core] Countly version checks and markings for future upgrades
+* [core] make indexing in background
+* [frontend] added safeDivision to countlyCommon
+* [frontend] extend ago function to 30 days and handle future timestamps
+* [frontend] provide method to change path hash without affecting history
+* [mongodb] support for MongoDB 3.6 with new nodejs driver 3.0+
+* [nodejs] support for nodejs version 8+
+* [scripts] check ram before running installer
+* [version] record version/upgrade history
+
+## Version 18.04.1
+
+**New Features**
+
+* [alerts] new plugin for receiving email alerts based on metric changes you configure
+* [compliance-hub] adding date selector to tables
+* [logger] add change device_id request types
+* [security] added config.js option for secure cookies
+* [security] set security headers for all requests (including assets)
+* [video-intelligence-monetization] new plugin allowing to integrate monetization
+
+**Fixes**
+
+* [api] do not update last api call timestamp on consent/location updates
+* [api] recording user merge history and postprocessing missed events in job
+* [assistant] added protection for initializing assistant on empty servers
+* [assistant] fixed issue with showing wrong URL for github feed items
+* [dbviewer] fix for displaying event collections to user read access level
+* [compliance-hub] fix big number columns
+* [compliance-hub] fixes for searching device_id in consent history
+* [frontend] fixed event resetting when switching between events
+* [frontend] fixed some missing images
+* [frontend] ipad, chrome table export countly drop bug fixed
+* [logger] do not log retried requests
+* [plugin-upload] fixed plugin validation failing in some cases
+* [push] fixed binary building for Ubuntu 17.10
+* [push] removing concurrency limit
+* [reportmanager] fixing date selector
+* [scripts] fixed installation script for Ubuntu 18.04
+* [security] disable powered-by headers
+* [security] prevent XSS on username/email input
+* [security] remove allow any origin policy for flash/action script
+* [security] use our own bundle of express expose, to prevent script injection
+* [systemlogs] fixing date selector
+* [views] handling view duration rounding
+
+**Enterprise Edition fixes**
+
+* [cohorts] optimize user grouping stage
+* [crash_symbolication] fixed file extension check for symbol file edit
+* [crash_symbolication] fixed file extension check for symbol file upload in script fallback cases
+* [crash_symbolication] correctly distinguish views crash views
+* [funnels] none existing uid fix
+
+**Development related**
+
+* [scripts] make sure fork tests don't fail on travis due to deployment scripts
+
+## Version 18.04
+
+**Fixes**
+
+* [crashes] fix regex for parsing new lines
+* [crashes] fixes on sorting and handling empty set
+* [frontend] ensure app links work even if app linking is disabled
+* [frontend] fix data table export bug on some tables
+* [frontend] prevent duplicate list loading from api
+* [frontend] remove alert warnings from TableTools
+* [push] handle deleting cohorts used in auto push
+* [reports] fix css overriding with prefix
+* [sliping-away] correct displaying percentage
+* [sources] correctly group domains
+* [sources] correctly parse keywords
+
+**New Features**
+
+* [api] added a way to delete specific app user
+* [api] added a way to export data about specific app user
+* [compliance-hub] for handling consents and provide way to comply with GDPR
+* [crashes] clean crash_users when possible
+* [events] added Event Management
+* [events] added functionality to omit specified event segments
+* [events] added overview of multiple custom selected events and their metrics
+* [logger] display list of problems with request
+* [logger] recognize consent requests
+* [populator] added consent emulation
+* [push] adding concurrency limit for push:send job
+* [push] adding skipPreparation parameter
+* [push] prevent passed-date scheduling from dashboard
+* [push] total users fix again
+* [systemlogs] add cd for possible ttl index
+* [views] limit view name length
+
+**Enterprise Edition features**
+
+* [alert] add app_id in path for crash detail link in email
+* [drill] force predefined meta types
+* [drill] record app_version for drill
+* [restrict] add support for blocking compliance plugin api on section restrict
+* [users] make tabs linkable
+* [users] visualize objects as properties
+
+**Enterprise Edition fixes**
+
+* [alert] fix timezone check
+* [alerts] fix for period check
+* [attribution] fix installation script, if indexes already exist
+* [cohorts] checking for active auto messages when deleting a cohort
+* [groups] disabled "groups and section access" for own users
+* [users] process both cohorts query formats
+
+**Development related**
+
+* [api] added separate app_users.js module to handle app users
+* [cmd] countly fs correctly deal with sub directory identifiers
+* [cmd] update npm packaged on plugin upgrade command
+* [cmd] use new hash for passwords when creating/removing users
+* [countlyCommon] allow to get dashboard stats for segments too in countlyCommon.getDashboardData method
+* [countlyCommon] more customizable way to record custom metrics
+* [db] fixes when using mongodb connection string
+* [process] change title of Countly processes
+
+## Version 18.01.1
+
+**Fixes and additions**
+
+* [UI] Add a button to toggle the sidebar
+* [UI] Softer green/red colors for sparklines and trend indicators
+* [api] ensure device_id should always be a string
+* [apps] clear older data fix
+* [db] added more indexes to speed up queries
+* [db] use driver default keepalive
+* [cmd] command line to get mongodb connection params
+* [crashes] break line before resolution
+* [data-migration] fixed bug checking received file type
+* [data-migration] fixed credential migration
+* [data-migration] fixed internal events migration
+* [frontend] Auth token now is created also after setup
+* [frontend] display month and day graphs for full period
+* [frontend] do not use app namepsace when no app is created
+* [frontend] fix dtable CustomDate order issue in ko, ja and zh
+* [frontend] fix showing percentage of platform version
+* [frontend] localization fixes
+* [frontend] update global user properties when changes made in management
+* [logger] remove highlighting of json data for better performance
+* [logger] output incorrect json as string
+* [plugins] Max limit for session timeout has been set to 32bit integer.
+* [push] Added missing cohorts names
+* [push] Fix for sending a message to user in specific cohort
+* [push] Fixed credits upload issue
+* [push] Fixing token filtering for automated push
+* [reports] email format update
+* [tests] add debug like feature for tests
+
+**Enterprise Fixes and additions**
+
+* [block] Fix typo
+* [crash_symbolication] fixed crashes in job
+* [cohorts] Fixed big list selection problem on create cohort view.
+* [cohorts] Remove deleted cohorts from selection
+* [dashboards] Fix widget drawer reset
+* [dashboards] Hide sidebar toggle in dashboards view
+* [drill] Fixed limited connection pool size 
+* [drill][block][cohorts] convert numeric values to number only for custom properties
+* [funnels] Calculation of total users in a perriod changed to get sessions from drill database.
+* [funnels] Fixed last row data problem.
+* [funnels] Funnels bars length issue has been fixed. 
+* [live] Prevent realtime bar content wrapping
+* [live] Responsive UI modifications
+* [revenue] Responsive UI modifications
+* [users] Added crashes tab to user profiles
+* [users] Fixed exporting users with cohorts filter
+* [white-labeling] Localization modifications
+
+## Version 18.01
+
+**Fixes**
+
+* Add export period to file name on export, if possible
+* Added separate post install script to allow running countly under countly user
+* Better duplicate request handling with logging (can be disabled in configs)
+* Bulk request fixes on waiting to process previous request, preventing them from pile up
+* Centos/RHEL installation fixes for nginx and supervisord
+* Changed formatting of date to be more locale independent
+* Countly backup and restore commands now work even if mongodb is on another server
+* DBViewer: optimize displaying collections for big amount of events
+* Error Logs: renamed to Server logs
+* Event Logs: show warning about limited data
+* Fix export dialog dropdown overflow in some cases
+* Fixed UI overflow for windows new Chrome versions
+* Fixed collapsing sticky table header in some cases
+* Fixed selecting API key in user menu
+* Handling future and incorrect timestamps
+* Handling session age properly to prevent old sessions piling up
+* Improved merging user properties on user merge
+* MacOS scroll bars issue has been fixed
+* Optimizing events view reloading (do not reload when not needed)
+* Plugin upload: works with plugins with dependencies
+* Plugins: disable pagination for plugins table
+* Push: fixed getting correct user profile query
+* Server Logs: handle properly when not possible to open file
+* Server stats: fixing data collection and reporting
+* Sorting server side tables on initialization, to save 1 request to the server
+* System logs: process search separately from filter
+* System logs: removed time selector
+* Trimming username or email on input when logging in or creating account
+* Views: fixing not displaying data on graph for views containing dot in the name
+
+**New Features**
+
+* API can now be authorized either with API key or Auth token
+* Added a way to link to specific user in Management-> Users
+* Added app reset (additionally to existing clear data) to reset app to initial state
+* Configurations: new UI, now searchable
+* Crashes: add resolving state to indicate the process started for resolving crash
+* Dashboard URLs are now app namespaced, so copying links would automatically select proper app (configurable)
+* Data migration: new plugin to easily move data from one countly server to other
+* Email reports: new design and ability to name and toggle reports
+* Event Logs: now shows if request was canceled and why
+* Format event duration as seconds
+* Full FS and GridFS support (switching for shared storage in config)
+* New installations use MongoDB 3.4
+* New location behavior, using more precise location data from location params, if possible
+* Populator: now also generates cohorts if plugin available
+* Removed app_users uid sequence to apps collection, to have clean collection for BI tools
+* Sources: new way of preprocessing web sources, smarter domain filtering
+* Systemlogs: linking to specific user who made action
+* Times of day: new plugin to show app usage on specific time of day or day of the week
+* UI changes, like favicon, new notification style
+* Views: Added heatmap click breakdown by resolution (requires Web SDK update)
+* Views: Added scroll maps (requires Web SDK update)
+* Web: Added website domain setting for app, to eliminate need for selecting domain for heatmaps
+
+**Enterprise Edition features**
+
+* Alerts: added more metrics for alerts, as Bounce rate, Number of page views, Purchase sum
+* Attribution: 7 day click data retention
+* Attribution: added custom segment limit
+* Attribution: added server to server campaign by matching advertising ids
+* Cohorts: add times user made action
+* Cohorts: added crash and view events
+* Drill: Added Browser version as drillable property
+* Drill: Catch big list overflow and mark it as full
+* Drill: Moved drill meta to separate collection and provided migration scripts, if user wants to have clean drill collections for BI tools
+* Drill: Switch to big list instead of string, when exceeds list limit
+* Funnels: showing dropped/lost users between funnel steps and other UI changes
+* Restrict: Improvements to restrict and allowing to change restriction dynamically
+* Restrict: correctly get menu texts when allowing/disallowing menus
+* Retention: switched to showing absolute retention
+* Users: display funnel durations
+* White labeling: added favicon change support
+
+**Enterprise Edition fixes**
+
+* Attribution: handle redirects correctly, when app data was migrated
+* Blocking request: renamed to Filter requests
+* Cohorts: Cannot edit cohort when one of the events deleted
+* Cohorts: process query correctly when viewing user subsets in drill, push, etc
+* Cohorts: remove BY queries
+* Drill: Correct cohorts behavior in AND or OR queries
+* Drill: Correctly get start of the week for weekly reporting
+* Drill: Remove cohorts from BY queries
+* Drill: fixed interpreting . as regex symbol in drill filters
+* Drill: interpret numeric values in filters as numbers
+* Filter requests: Allow editing rules
+* Filter requests: Allow toggling rules
+* Filter requests: prevent duplicated rules
+* Funnels: clearing cache properly on app reset
+* Live: switch to TTL data limitation instead of capped
+* Symbolication: added file format check
+
+**Development related**
+
+* Added Vagrant support
+* Added a way to get mongodb command line connection from config files
+* Added a way to hook into Backbone url processing
+* Added endpoint for precalculated event data
+* Added new rights module with promise support to validate users
+* Allow plugins to add command line commands
+* Allow running separate plugins test suite through command line on unclean instance
+* Command line: additional checks on user management
+* Create common.db connection on master process
+* Dashboard now uses token based authentication when communicating with API
+* Removed properties pe, crashes, old, lat and lng from app_users
+
 ## Version 17.09
 
 **Fixes**

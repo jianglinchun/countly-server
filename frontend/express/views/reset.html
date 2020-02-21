@@ -9,6 +9,10 @@
 -->
 <html>
 <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="referrer" content="no-referrer">
 	<link href='../stylesheets/pre-login/main.css' rel='stylesheet' type='text/css'>
 	<link rel="icon" type="image/png" href="../<%- countlyFavicon %>">
     <% if (themeFiles && themeFiles.css) { %>
@@ -33,26 +37,15 @@
 		<div class="top-button" id="select-lang">
 			<div id="active-lang">EN</div>
 			<div id="langs">
-                <div class="group">
-					<a data-language-code="de" class="item">Deutsch</a>
-					<a data-language-code="en" class="item">English</a>
-					<a data-language-code="es" class="item">Español</a>
-					<a data-language-code="fr" class="item">Français</a>
-					<a data-language-code="it" class="item">Italiano</a>
-                    <a data-language-code="nl" class="item">Nederlands</a>
-					<a data-language-code="lv" class="item">Latviski</a>
-                    <a data-language-code="hu" class="item">Magyar</a>
-                    <a data-language-code="el" class="item">Ελληνικά</a>
+        <div class="group">
+					<% for(var i=0, l=(languages.length/2); i<l; i++) {%>
+    				<a data-language-code="<%=languages[i].code%>" class="item"><%=languages[i].name%></a>
+        	<% } %>
 				</div>
 				<div class="group">
-					<a data-language-code="et" class="item">Eesti</a>
-                    <a data-language-code="pt" class="item">Português</a>
-                    <a data-language-code="ru" class="item">Русский язык</a>
-					<a data-language-code="tr" class="item">Türkçe</a>
-					<a data-language-code="zh" class="item">中文</a>
-					<a data-language-code="ja" class="item">日本語</a>
-                    <a data-language-code="ko" class="item">한국어</a>
-                    <a data-language-code="vi" class="item">Tiếng Việt</a>
+					<% for(var i=(parseInt(languages.length/2) + 1), l=languages.length; i<l; i++) {%>
+    				<a data-language-code="<%=languages[i].code%>" class="item"><%=languages[i].name%></a>
+        	<% } %>
 				</div>
 			</div>
 		</div>
@@ -87,21 +80,25 @@
 	</div>
 	<script language="javascript" type="text/javascript" src="../javascripts/dom/jquery/jquery-1.8.3.min.js"></script>
 	<script language="javascript" type="text/javascript" src="../javascripts/utils/prefixfree.min.js"></script>
-	<script language="javascript" type="text/javascript" src="../javascripts/dom/jquery.noisy.min.js"></script>
 	<script language="javascript" type="text/javascript" src="../javascripts/utils/store+json2.min.js"></script>
 	<script language="javascript" type="text/javascript" src="../javascripts/utils/jquery.i18n.properties-min-1.0.9.js"></script>
+	<script language="javascript" type="text/javascript" src="../javascripts/utils/jquery.xss.js"></script>
 	<script language="javascript" type="text/javascript" src="../javascripts/pre-login.js"></script>
 	<script>
         var countlyTitle = "<%- countlyTitle %>";
 		$(document).ready(function() {
-			<% if (message){ %>
-				showMessage("<%= message %>");
+			<% if (message && message.length > 0){ %>
+				showMessage("<%= message %>", "<%= password_min %>");
 			<% } %>
-			document.title = countlyTitle + " | " + jQuery.i18n.map["forgot.title"];
+			if (jQuery.i18n.map["forgot.title"]) {
+                document.title = countlyTitle + " | " + jQuery.i18n.map["forgot.title"];
+            }
 		});
 		
 		$(document).bind('clyLangChange', function() {
-			document.title = countlyTitle + " | " + jQuery.i18n.map["forgot.title"];
+			if (jQuery.i18n.map["forgot.title"]) {
+                document.title = countlyTitle + " | " + jQuery.i18n.map["forgot.title"];
+            }
 		});
 	</script>
 	<% if (typeof inject_template.js != 'undefined') { %>

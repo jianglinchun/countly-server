@@ -65,14 +65,16 @@ namespace apns {
 		headers[3] = MAKE_NV("host", hostname, NGHTTP2_NV_FLAG_NO_COPY_NAME | NGHTTP2_NV_FLAG_NO_COPY_VALUE);
 		headers[4] = MAKE_NV("apns-expiration", expiration, NGHTTP2_NV_FLAG_NO_COPY_NAME | NGHTTP2_NV_FLAG_NO_COPY_VALUE);
 
+		headers[5] = MAKE_NVC("apns-push-type", PUSH_TYPE_ALERT, PUSH_TYPE_ALERT_LEN, NGHTTP2_NV_FLAG_NO_COPY_NAME | NGHTTP2_NV_FLAG_NO_COPY_VALUE);
+
 		// a bit hacky here, but easier...  NGHTTP2_NV_FLAG_NO_INDEX for this header means "do not send me", see h2::transmit in conn
-		headers[5] = MAKE_NV("apns-topic", topic, NGHTTP2_NV_FLAG_NONE);
+		headers[6] = MAKE_NV("apns-topic", topic, NGHTTP2_NV_FLAG_NONE);
 
 		if (certificate.empty()) {
 			LOG_DEBUG("no certificate, using " << passphrase);
-			headers[6] = MAKE_NV("authorization", passphrase, NGHTTP2_NV_FLAG_NONE);
+			headers[7] = MAKE_NV("authorization", passphrase, NGHTTP2_NV_FLAG_NONE);
 		} else {
-			headers[6] = MAKE_NV("authorization", passphrase, NGHTTP2_NV_FLAG_NO_INDEX);
+			headers[7] = MAKE_NV("authorization", passphrase, NGHTTP2_NV_FLAG_NO_INDEX);
 		}
 
 		global_data.source.fd = 0;
@@ -193,12 +195,23 @@ namespace apns {
 		persistentHandle->resolver = persistent;
 		persistentHandle->conn = obj;
 
+		obj->proxyhost = std::string(*v8::String::Utf8Value(info[1]));
+		obj->proxyport = std::stoi(std::string(*v8::String::Utf8Value(info[2])));
+		obj->proxyauth = std::string(*v8::String::Utf8Value(info[3]));
+
+		LOG_DEBUG("proxy " << obj->proxyauth << " @ " << obj->proxyport << ": " << obj->proxyport);
+
 		uv_work_t* handle = new uv_work_t;
 		handle->data = persistentHandle;
 
 		auto init_l = [](uv_work_t *handle) -> void {
 			auto persistentHandle = static_cast<PeristentHandle*>(handle->data);
 			auto obj = persistentHandle->conn;
+
+			SSL_load_error_strings();
+			SSL_library_init();
+			OpenSSL_add_all_algorithms();
+			ERR_load_crypto_strings();
 
 			obj->ssl_ctx = SSL_CTX_new(SSLv23_client_method());
 			if (!obj->ssl_ctx) {
@@ -213,7 +226,7 @@ namespace apns {
 			SSL_CTX_set_mode(obj->ssl_ctx, SSL_MODE_AUTO_RETRY);
 			SSL_CTX_set_mode(obj->ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
 
-			LOG_DEBUG("loading certificate from " << obj->certificate);
+			// LOG_DEBUG("loading certificate from " << obj->certificate);
 
 			if (obj->certificate.empty()) {
 				LOG_DEBUG("no certificate, using bearer " << obj->passphrase);
@@ -227,13 +240,9 @@ namespace apns {
 
 				base64_decode(obj->certificate.c_str(), &buffer, &length);
 
+				LOG_DEBUG("read " << length << " of base64");
+
 				BIO *bio = BIO_new_mem_buf(buffer, length);
-
-
-				SSL_load_error_strings();
-				SSL_library_init();
-				OpenSSL_add_all_algorithms();
-				ERR_load_crypto_strings();
 
 				p12 = d2i_PKCS12_bio(bio, NULL);
 				// p12 = d2i_PKCS12_fp(fp, NULL);
@@ -346,7 +355,15 @@ namespace apns {
 	}
 	void H2::resolve(const Nan::FunctionCallbackInfo<Value>& info) {
 		H2* obj = ObjectWrap::Unwrap<H2>(info.Holder());
-		LOG_INFO("resolving " << obj->hostname);
+
+		LOG_INFO("resolving ");
+		std::ostringstream stm;
+		stm << obj->proxyport;
+
+		auto host = obj->proxyport == 0 ? obj->hostname : obj->proxyhost;
+		auto port = obj->proxyport == 0 ? "443" : stm.str();
+
+		LOG_INFO("resolving " << host);
 
 		auto resolver = v8::Promise::Resolver::New(info.GetIsolate());
 		auto promise = resolver->GetPromise();
@@ -364,7 +381,7 @@ namespace apns {
 		hints.ai_protocol = 0;
 		hints.ai_flags = AI_ADDRCONFIG;
 
-		uv_getaddrinfo(uv_default_loop(), obj->handle_resolve, resolve_cb, obj->hostname.c_str(), "443", &hints);
+		uv_getaddrinfo(uv_default_loop(), obj->handle_resolve, resolve_cb, host.c_str(), port.c_str(), &hints);
 
 		info.GetReturnValue().Set(promise);
 	}
@@ -576,8 +593,13 @@ namespace apns {
 					// strcpy(stream.path, *str2);
 
 					// LOG_DEBUG("for " << stream->id << " data is " << array->Get(2)->IntegerValue());
-					auto data = obj->messages[(uint8_t)array->Get(2)->IntegerValue()];
-					stream->data = data;
+					// auto data = obj->messages[(uint8_t)array->Get(2)->IntegerValue()];
+					stream->data = std::string(*v8::String::Utf8Value(array->Get(2)));;
+					stream->alert = array->Get(3)->ToBoolean()->Value();
+					// auto data = obj->messages[(uint8_t)array->Get(2)->IntegerValue()];
+					// stream->data = data;
+
+
 					// LOG_DEBUG("for " << stream->id << " data became " << stream->data << ", " << *stream->data);
 					stream->stream_id = 0;
 					stream->response = EMPTY_STR;
@@ -591,7 +613,7 @@ namespace apns {
 				if (obj->certificate.empty()) {
 					LOG_DEBUG("feed token was " << obj->passphrase);
 					obj->passphrase = std::string(*v8::String::Utf8Value(info[1]));
-					obj->headers[6] = MAKE_NV("authorization", obj->passphrase, NGHTTP2_NV_FLAG_NONE);
+					obj->headers[7] = MAKE_NV("authorization", obj->passphrase, NGHTTP2_NV_FLAG_NONE);
 					LOG_DEBUG("feed token now " << obj->passphrase);
 				}
 				// LOG_DEBUG("feed unblock " << obj->stats.feed_last);

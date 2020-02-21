@@ -1,97 +1,112 @@
-var plugin = {},
-	crypto = require("crypto"),
+var exported = {},
     countlyConfig = require('../../../api/config', 'dont-enclose');
 
-(function (plugin) {
+(function(plugin) {
     var countlyDb;
-	function getIpAddress(req) {
-		var ipAddress = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.connection.remoteAddress || req.socket.remoteAddress || (req.connection.socket ? req.connection.socket.remoteAddress : '');
+    /**
+     * Function to get ip address
+     * @param  {Object} req - req object
+     * @returns {string} ip
+     */
+    function getIpAddress(req) {
+        var ipAddress = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.connection.remoteAddress || req.socket.remoteAddress || (req.connection.socket ? req.connection.socket.remoteAddress : '');
         /* Since x-forwarded-for: client, proxy1, proxy2, proxy3 */
         var ips = ipAddress.split(',');
-        
+
         //if ignoreProxies not setup, use outmost left ip address
-        if(!countlyConfig.ignoreProxies || !countlyConfig.ignoreProxies.length){
+        if (!countlyConfig.ignoreProxies || !countlyConfig.ignoreProxies.length) {
             return ips[0];
         }
         //search for the outmost right ip address ignoring provided proxies
         var ip = "";
-        for(var i = ips.length-1; i >= 0; i--){
-            if(ips[i].trim() != "127.0.0.1" && (!countlyConfig.ignoreProxies || countlyConfig.ignoreProxies.indexOf(ips[i].trim()) === -1)){
+        for (var i = ips.length - 1; i >= 0; i--) {
+            if (ips[i].trim() !== "127.0.0.1" && (!countlyConfig.ignoreProxies || countlyConfig.ignoreProxies.indexOf(ips[i].trim()) === -1)) {
                 ip = ips[i].trim();
                 break;
             }
         }
         return ip;
-	};
-    
-    function getTimestamp(){
-        return Math.round(new Date().getTime()/1000);
     }
-	
-	function sha1Hash(str, addSalt) {
-		var salt = (addSalt) ? new Date().getTime() : "";
-		return crypto.createHmac('sha1', salt + "").update(str + "").digest('hex');
-	};
-	plugin.init = function(app, db, express){
+    /**
+     * Function to get timestamp
+     * @returns {number} timestamp
+     */
+    function getTimestamp() {
+        return Math.round(new Date().getTime() / 1000);
+    }
+
+    plugin.init = function(app, db) {
         countlyDb = db;
     };
-    
-    plugin.userLogout = function(ob){
+
+    plugin.userLogout = function(ob) {
         recordAction(ob.req, ob.data, "logout", ob.data.query || {});
     };
-    
-    plugin.passwordReset = function(ob){
+
+    plugin.passwordReset = function(ob) {
         recordAction(ob.req, ob.data, "password_reset", {});
     };
-    
-    plugin.passwordRequest = function(ob){
+
+    plugin.passwordRequest = function(ob) {
         recordAction(ob.req, ob.data, "password_request", {});
     };
-    
-    plugin.loginSuccessful = function(ob){
+
+    plugin.loginSuccessful = function(ob) {
         recordAction(ob.req, ob.data, "login_success", {});
     };
-    
-    plugin.loginFailed = function(ob){
+
+    plugin.loginFailed = function(ob) {
         recordAction(ob.req, ob.data, "login_failed", {});
     };
-    
-    plugin.apikeySuccessful = function(ob){
+
+    plugin.apikeySuccessful = function(ob) {
         recordAction(ob.req, ob.data, "api-key_success", {});
     };
-    
-    plugin.apikeyFailed = function(ob){
+
+    plugin.apikeyFailed = function(ob) {
         recordAction(ob.req, ob.data, "api-key_failed", {});
     };
-    
-    plugin.mobileloginSuccessful = function(ob){
+
+    plugin.mobileloginSuccessful = function(ob) {
         recordAction(ob.req, ob.data, "mobile_login_success", {});
     };
-    
-    plugin.mobileloginFailed = function(ob){
+
+    plugin.mobileloginFailed = function(ob) {
         recordAction(ob.req, ob.data, "mobile_login_failed", {});
     };
-    
-    plugin.userSettings = function(ob){
+
+    plugin.tokenLoginFailed = function(ob) {
+        recordAction(ob.req, ob.data, "token_login_failed", {});
+    };
+
+    plugin.tokenLoginSuccessful = function(ob) {
+        recordAction(ob.req, ob.data, "token_login_successfull", {});
+    };
+
+    plugin.accountDeleted = function(ob) {
+        recordAction(ob.req, ob.data, "user_account_deleted", {});
+    };
+
+    plugin.userSettings = function(ob) {
         var data = {};
         data.before = {};
         data.after = {};
         data.update = ob.data.change;
         compareChanges(data, ob.data, ob.data.change);
-        if(typeof data.before.password != "undefined"){
+        if (typeof data.before.password !== "undefined") {
             data.before.password = true;
             data.after.password = true;
         }
         recordAction(ob.req, ob.data, "account_settings_updated", data);
     };
-    
-    plugin.logAction = function(ob){
+
+    plugin.logAction = function(ob) {
         ob.data = JSON.parse(JSON.stringify(ob.data));
         delete ob.data._csrf;
-        if(typeof ob.data.before != "undefined" && typeof ob.data.update != "undefined"){
+        if (typeof ob.data.before !== "undefined" && typeof ob.data.update !== "undefined") {
             var data = {};
-            for(var i in ob.data){
-                if(i != "before" && i != "after"){
+            for (var i in ob.data) {
+                if (i !== "before" && i !== "after") {
                     data[i] = ob.data[i];
                 }
             }
@@ -100,78 +115,150 @@ var plugin = {},
             compareChanges(data, ob.data.before, ob.data.update);
             recordAction(ob.req, ob.user, ob.action, data);
         }
-        else{
+        else {
             recordAction(ob.req, ob.user, ob.action, ob.data);
         }
     };
-    
-    function compareChanges(data, before, after){
-        for(var i in after){
-            if(typeof after[i] == "object" && after[i] && before[i]){
-                if(Array.isArray(after[i]) && JSON.stringify(after[i]) != JSON.stringify(before[i])){
-                    data.before[i] = before[i];
-                    data.after[i] = after[i];
+
+    /**
+     * Function to compare changes
+     * @param  {Object} data - data object
+     * @param  {Object} before - before values
+     * @param  {Object} after - after values
+     */
+    function compareChanges(data, before, after) {
+        if (before && after) {
+            if (typeof before._id !== "undefined") {
+                before._id += "";
+                data._id = before._id;
+                if (typeof before.name !== "undefined") {
+                    data.name = before.name;
                 }
-                else{
-                    for (var propName in after[i]) {
-                        if(after[i][propName] != before[i][propName]){
-                            if(!data.before[i])
-                                data.before[i] = {};
-                            if(!data.after[i])
-                                data.after[i] = {};
-                            
-                            data.before[i][propName] = before[i][propName];
-                            data.after[i][propName] = after[i][propName];
+            }
+            if (typeof after._id !== "undefined") {
+                after._id += "";
+            }
+            compareChangesInside(data.after, data.before, before, after, Object.keys(after) || [], Object.keys(before) || []);
+        }
+    }
+
+    /**
+     * recursive function to compare changes
+     * @param  {Object} dataafter - after data values
+     * @param  {Object} databefore - before data values
+     * @param  {Object} before - before
+     * @param  {Object} after - after
+     * @param  {Array} keys - keys for after object
+     * @param  {Array} keys2 - keys for before object
+     */
+    function compareChangesInside(dataafter, databefore, before, after, keys, keys2) {
+        for (let i = 0; i < keys2.length; i++) {
+            if (keys.indexOf(keys2[i]) === -1) {
+                keys.push(keys2[i]);
+            }
+        }
+        for (let i = 0; i < keys.length; i++) {
+            if (typeof after[keys[i]] !== "undefined" && typeof before[keys[i]] !== "undefined") {
+                if (typeof after[keys[i]] === "object") {
+                    if (Array.isArray(after[keys[i]])) {
+                        if (JSON.stringify(after[keys[i]]) !== JSON.stringify(before[keys[i]])) {
+                            databefore[keys[i]] = before[keys[i]];
+                            dataafter[keys[i]] = after[keys[i]];
+                        }
+                    }
+                    else {
+                        var keys00 = Object.keys(after[keys[i]]) || [];
+                        var keys02 = Object.keys(before[keys[i]] || {}) || [];
+
+                        if (keys00.length === 0 && keys02.length !== 0) {
+                            databefore[keys[i]] = before[keys[i]];
+                            dataafter[keys[i]] = after[keys[i]];
+                        }
+                        else if (keys02.length === 0 && keys00.length !== 0) {
+                            databefore[keys[i]] = before[keys[i]];
+                            dataafter[keys[i]] = after[keys[i]];
+                        }
+                        else {
+                            if (!databefore[keys[i]]) {
+                                databefore[keys[i]] = {};
+                            }
+                            if (!dataafter[keys[i]]) {
+                                dataafter[keys[i]] = {};
+                            }
+                            compareChangesInside(dataafter[keys[i]], databefore[keys[i]], before[keys[i]], after[keys[i]], keys00, keys02);
+                            if (typeof dataafter[keys[i]] === "object" && typeof databefore[keys[i]] === "object" && (Object.keys(dataafter[keys[i]])).length === 0 && (Object.keys(databefore[keys[i]])).length === 0) {
+                                delete databefore[keys[i]];
+                                delete dataafter[keys[i]];
+                            }
                         }
                     }
                 }
+                else {
+                    if (after[keys[i]] !== before[keys[i]]) {
+                        databefore[keys[i]] = before[keys[i]];
+                        dataafter[keys[i]] = after[keys[i]];
+                    }
+                }
             }
-            else if(after[i] != before[i]){
-                data.before[i] = before[i];
-                data.after[i] = after[i];
+            else {
+                if (typeof after[keys[i]] !== 'undefined') {
+                    dataafter[keys[i]] = after[keys[i]];
+                    databefore[keys[i]] = {};
+                }
             }
         }
     }
-    
-    function recordAction(req, user, action, data){
+
+    /**
+     * Function to record action
+     * @param  {Object} req - The request object
+     * @param  {Object} user - User data object
+     * @param  {String} action - Action 
+     * @param  {Object} data - Data object
+     */
+    function recordAction(req, user, action, data) {
         var log = {};
         log.a = action;
         log.i = data;
         log.ts = getTimestamp();
+        log.cd = new Date();
         log.u = user.email || user.username || "";
         log.ip = getIpAddress(req);
-        if(typeof data.app_id != "undefined")
+        if (typeof data.app_id !== "undefined") {
             log.app_id = data.app_id;
-        if(user._id){
-            log.user_id = user._id + "";
-            countlyDb.collection('systemlogs').insert(log, function () {});
         }
-        else{
+        if (user._id) {
+            log.user_id = user._id + "";
+            countlyDb.collection('systemlogs').insert(log, function() {});
+        }
+        else {
             var query = {};
-            if(user.username)
-                query = {$or: [ {"username":user.username}, {"email":user.username} ]};
-            else if(user.email)
+            if (user.username) {
+                query = {$or: [ {"username": user.username}, {"email": user.username} ]};
+            }
+            else if (user.email) {
                 query.email = user.email;
-            if(Object.keys(query).length){
-                countlyDb.collection('members').findOne(query, function(err, res){
-                    if(!err && res){
+            }
+            if (Object.keys(query).length) {
+                countlyDb.collection('members').findOne(query, function(err, res) {
+                    if (!err && res) {
                         log.user_id = res._id + "";
-                        if(log.u == ""){
+                        if (log.u === "") {
                             log.u = res.email || res.username;
                         }
                     }
-                     countlyDb.collection('systemlogs').insert(log, function () {});
+                    countlyDb.collection('systemlogs').insert(log, function() {});
                 });
             }
-            else{
-                countlyDb.collection('systemlogs').insert(log, function () {});
+            else {
+                countlyDb.collection('systemlogs').insert(log, function() {});
             }
         }
         var update = {};
-        update["a."+countlyDb.encode(action)] = true;
-        countlyDb.collection("systemlogs").update({_id:"meta_v2"}, {$set:update}, {upsert:true}, function(err, res){});
-    };
-    
-}(plugin));
+        update["action." + countlyDb.encode(action)] = true;
+        countlyDb.collection("systemlogs").update({_id: "meta_v2"}, {$set: update}, {upsert: true}, function() {});
+    }
 
-module.exports = plugin;
+}(exported));
+
+module.exports = exported;

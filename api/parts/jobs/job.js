@@ -1,43 +1,45 @@
 'use strict';
 
+/* jshint ignore:start */
+
 const EventEmitter = require('events'),
-	  later = require('later'),
-	  ipc = require('./ipc.js'),
-	  log = require('../../utils/log.js')('jobs:job'),
-	  retry = require('./retry.js'),
-	  ObjectID = require('mongoskin').ObjectID;
+    later = require('later'),
+    ipc = require('./ipc.js'),
+    log = require('../../utils/log.js')('jobs:job'),
+    retry = require('./retry.js'),
+    ObjectID = require('mongoskin').ObjectID;
 
 const STATUS = {
-	SCHEDULED: 0,
-	RUNNING: 1,
-	DONE: 2,
-	CANCELLED: 3,
-	ABORTED: 4,
-	PAUSED: 5,
-	WAITING: 6
-}, 
-ERROR = {
-	CRASH: 'crash',
-	TIMEOUT: 'timeout'
-},
-EVT = {
-	PROGRESS: 'job:progress',
-	SAVE: 'job:save',
-	SAVED: 'job:saved',
-	DONE: 'job:done',
-	TRANSIENT_CHANNEL: 'jobs:transient',
-	TRANSIENT_RUN: 'jobs:transient:run',
-	TRANSIENT_DONE: 'jobs:transient:done'
-},
-MAXIMUM_SAVE_ERRORS = 5,
-MAXIMUM_JOB_TIMEOUT = 30000;
+        SCHEDULED: 0,
+        RUNNING: 1,
+        DONE: 2,
+        CANCELLED: 3,
+        ABORTED: 4,
+        PAUSED: 5,
+        WAITING: 6
+    },
+    ERROR = {
+        CRASH: 'crash',
+        TIMEOUT: 'timeout'
+    },
+    EVT = {
+        UPDATE: 'job:update',
+        DONE: 'job:done',
+        TRANSIENT_CHANNEL: 'jobs:transient',
+        TRANSIENT_RUN: 'jobs:transient:run',
+        TRANSIENT_DONE: 'jobs:transient:done'
+    };
 
 /**
  * Debounce function which decreases number of calls to func to be once in minWait ... maxWait.
+ * @param {function} func - function to debounce
+ * @param {number} minWait - minimal waiting time
+ * @param {number} maxWait - maximal waiting time
+ * @returns {function} debounced function
  */
-const debounce = function (func, minWait, maxWait) {
-    var timeout, first, args, context, 
-        later = function() {
+const debounce = function(func, minWait, maxWait) {
+    var timeout, first, args, context,
+        delater = function() {
             func.apply(context, args);
             timeout = first = args = context = null;
         };
@@ -51,9 +53,10 @@ const debounce = function (func, minWait, maxWait) {
         clearTimeout(timeout);
 
         if (maxWait < (Date.now() - first)) {
-            later();
-        } else {
-            timeout = setTimeout(later, Math.min(minWait, maxWait - (Date.now() - first)));
+            delater();
+        }
+        else {
+            timeout = setTimeout(delater, Math.min(minWait, maxWait - (Date.now() - first)));
         }
     };
 };
@@ -77,501 +80,796 @@ const debounce = function (func, minWait, maxWait) {
  * TransientJob which extends IPCJob is used when job shouldn't be saved in jobs collection with all status updates being run through IPC.
  */
 class Job extends EventEmitter {
-	constructor(name, data) {
-		super();
-		if (typeof name === 'object') {
-			this._json = name;
-			if (this._json._id && typeof this._json._id === 'string') {
-				this._json._id = new ObjectID(this._json._id);
-			}
-		} else {
-			this._json = {
-			//	_id: ObjectId
-				name: name,
-				created: Date.now(),
-				status: STATUS.SCHEDULED,
-				started: null,	// timestamp
-				finished: null,	// timestamp
-				duration: 0,	// seconds
-			//	size: 0,
-			//	done: 0,
-			//	bookmark: null,	// anything
-			//	error: ''
-			//  data: {},
-			//  subs: [
-			//  	{_id: same ObjectId, idx: 0, name: 'same or other name', created, status, started, finished, duration, size, done, bookmark, error, data},
-			//  	{_id: same ObjectId, idx: 1, name: 'same or other name', created, status, started, finished, duration, size, done, bookmark, error, data}
-			//	],
-			};
-		}
-		this._replace = false; 	
-		this._errorCount = 0;
+    /**
+    * Create job instance
+    * @param {string} name - name of the job
+    * @param {object} data - data about the job
+    **/
+    constructor(name, data) {
+        super();
+        if (typeof name === 'object') {
+            this._json = name;
+            if (this._json._id && typeof this._json._id === 'string') {
+                this._json._id = new ObjectID(this._json._id);
+            }
+        }
+        else {
+            this._json = {
+                //	_id: ObjectId
+                name: name,
+                created: Date.now(),
+                status: STATUS.SCHEDULED,
+                started: null,	// timestamp
+                finished: null,	// timestamp
+                duration: 0,	// seconds
+                data: data || {}
+                //	size: 0,
+                //	done: 0,
+                //	bookmark: null,	// anything
+                //	error: ''
+                //  data: {},
+                //  subs: [
+                //  	{_id: same ObjectId, idx: 0, name: 'same or other name', created, status, started, finished, duration, size, done, bookmark, error, data},
+                //  	{_id: same ObjectId, idx: 1, name: 'same or other name', created, status, started, finished, duration, size, done, bookmark, error, data}
+                //	],
+            };
+        }
+        this._replace = false;
+        this._errorCount = 0;
 
-		if (data) { 
-			this._json.data = data;
-		}
-	}
+    }
 
-	get _id () { return '' + this._json._id; }
-	get _idIpc () { return this._id + (this._isSub() ? '|' + this._json.idx : ''); }
-	get idx () { return this._json.idx; }
-	get name () { return this._json.name; }
-	get data () { return this._json.data; }
-	get size () { return this._json.size; }
-	get done () { return this._json.done; }
-	get bookmark () { return this._json.bookmark; }
-	get status () { return this._json.status; }
-	get isCompleted () { return this._json.status === STATUS.DONE; }
-	get isAborted () { return this._json.status === STATUS.ABORTED; }
-	get canRun () { return this._json.status === STATUS.RUNNING; }
-	get scheduleObj () { return this._json.schedule; }
-	get strict () { return this._json.strict; }
-	get next () { return this._json.next; }
-	get isSub () { return typeof this._json.idx !== 'undefined'; }
+    /**
+    * Get job id with fallback
+    * @returns {string} job id
+    **/
+    get id() {
+        return this._json._id ? '' + this._json._id : undefined;
+    }
 
-	schedule (schedule, strict, nextTime) {
-		this._json.schedule = schedule;
-		this._json.status = STATUS.SCHEDULED;
+    /**
+    * Get job id
+    * @returns {string} job id
+    **/
+    get _id() {
+        return this._json._id;
+    }
 
-		if (strict) {
-			this._json.strict = strict;
-		}
+    /**
+    * Get job channel
+    * @returns {string} job channel id
+    **/
+    get channel() {
+        return (this.id || '') + (this.isInExecutor ? ':executor' : '');
+    }
 
-		if (nextTime) {
-			this._json.next = nextTime;
-		} else {
-			schedule = typeof schedule === 'string' ? later.parse.text(schedule) : schedule;
-			var next = later.schedule(schedule).next(1);
-			if (!next) { return null; }
+    /**
+    * Get job name
+    * @returns {string} job name
+    **/
+    get name() {
+        return this._json.name;
+    }
 
-			this._json.next = next.getTime();
-		}
+    /**
+    * Get job data
+    * @returns {object} job data
+    **/
+    get data() {
+        return this._json.data || {};
+    }
 
-		return this._save();
-	}
+    /**
+    * Get job status
+    * @returns {number} job status
+    **/
+    get status() {
+        return this._json.status;
+    }
 
-	once (date, strict) {
-		this._json.next = typeof date === 'number' ? date : date.getTime();
-		if (strict) {
-			this._json.strict = strict;
-		}
-	
-		return this._save();
-	}
+    /**
+    * Check if job is completed
+    * @returns {boolean} if job was completed
+    **/
+    get isCompleted() {
+        return this._json.status === STATUS.DONE;
+    }
 
-	now () {
-		this._json.next = 0;
-		return this._save();
-	}
+    /**
+    * Check if job was aborted
+    * @returns {boolean} if job was aborted
+    **/
+    get isAborted() {
+        return this._json.status === STATUS.ABORTED;
+    }
 
-	in (seconds) {
-		this._json.next = Date.now() + seconds * 1000;
-		return this._save();
-	}
+    /**
+    * Check if job is running
+    * @returns {boolean} if job is running
+    **/
+    get canRun() {
+        return this._json.status === STATUS.RUNNING;
+    }
 
-	replace () {
-		if (typeof this._json.idx !== 'undefined') {
-			throw new Error('Replace cannot be run on a subjob');
-		}
-		this._replace = true;
-		return this;
-	}
+    /**
+    * Get schedule object
+    * @returns {object} schedule object from later js
+    **/
+    get scheduleObj() {
+        return this._json.schedule;
+    }
 
-	timeout () {
-		return MAXIMUM_JOB_TIMEOUT;
-	}
+    /**
+    * Get strict schedule value
+    * @returns {boolean} strict
+    **/
+    get strict() {
+        return this._json.strict;
+    }
 
-	_timeoutCancelled () {
-		return false;
-	}
+    /**
+    * Get next run time
+    * @returns {object} next run
+    **/
+    get next() {
+        return this._json.next;
+    }
 
-	_save (set) {
-		return new Promise((resolve, reject) => {
-			try {
-			this._json.modified = Date.now();
-			var query, update, clb = (err, res) => {
-				if (err) { 
-					if (this._errorCount++ < MAXIMUM_SAVE_ERRORS) {
-						log.w('Error while saving job: %j', err);
-						setTimeout(() => {
-							this._save(set).then(resolve.bind(null, set), reject);
-						}, 1000); 
-					} else {
-						log.e('Error while saving job: %j', err);
-						reject(err);
-					}
-				} else if (res.result.nModified === 0) {
-					log.e('Job %s has been changed while doing _save: %j / setting %j for query %j', this._id, this._json, update, query);
-					reject('Job cannot be found while doing _save');
-				} else {
-					resolve(set || res);
-				}
 
-				if (this.isSub && this.parent) {
-					this.parent._subSaved(this);
-				}
-			};
+    /**
+    * Schedule job
+    * @param {object} schedule - schedule object from later js
+    * @param {number} strict (optional) - maximum time in ms after each schedule occurrence date the job must be run, otherwise it'd be discarded
+    * @param {object} nextTime (optional) - next run time
+    * @returns {object} result of saving job
+    **/
+    schedule(schedule, strict, nextTime) {
+        this._json.schedule = schedule;
+        this._json.status = STATUS.SCHEDULED;
 
-			if (this._replace) {
-				query = {status: STATUS.SCHEDULED, name: this.name};
-				if (this.data) { query.data = this.data; }
+        if (strict !== undefined) {
+            this._json.strict = strict;
+        }
 
-				if (this._json.schedule) {
-					let schedule = typeof this._json.schedule === 'string' ? later.parse.text(this._json.schedule) : this._json.schedule,
-						prev = later.schedule(schedule).prev(1);
+        if (nextTime) {
+            this._json.next = nextTime;
+        }
+        else {
+            schedule = typeof schedule === 'string' ? later.parse.text(schedule) : schedule;
+            var next = later.schedule(schedule).next(1);
+            if (!next) {
+                return null;
+            }
 
-					log.i('replacing job %j with', query, this._json);
-					this.db().collection('jobs').find(query).toArray((err, jobs) => {
-						if (err) {
-							log.e('job replacement error when looking for existing jobs to replace', err);
-							this.db().collection('jobs').save(this._json, clb);
-						} else if (jobs && jobs.length) {
-							try {
-							let last = jobs.sort((a, b) => b.next - a.next)[0];
-							let others = jobs.filter(a => a !== last);
-							if (others.length) {
-								log.i('found %d jobs with %j, going to cancel %j', jobs.length, query, others.map(j => j._id));
-								Promise.all(others.map(j => {
-									return require('./index.js').create(j).cancel(this.db(), false);
-								}));
-								// this.db().collection('jobs').update({_id: {$in: others.map(j => j._id)}}, {$set: {status: STATUS.CANCELLED}}, {multi: true}, log.logdb(''));
-							}
+            this._json.next = next.getTime();
+        }
 
-							if (last.schedule === this._json.schedule && last.next > prev.getTime()) {
-								// just do nothing
-								log.i('last job is scheduled correctly, won\'t replace anything for %j: current %j, won\'t replace to %j', query, new Date(last.next), new Date(this.next));
-								resolve(set);
-							} else {
-								log.i('replacing last job %j with %j', last, this._json);
-								this.db().collection('jobs').findAndModify(query, [['_id', 1]], {$set: this._json}, {new: true}, (err, job) => {
-									if (err) {
-										log.e('job replacement error, saving new job', err, job);
-										this.db().collection('jobs').save(this._json, clb);
-									} else if (job && !job.value){
-										log.i('no job found to replace, saving new job', err, job);
-										this.db().collection('jobs').save(this._json, clb);
-									} else {
-										log.i('job replacing done', job.value);
-										resolve(set);
-									}
-								});
-							}
-						}catch(e) { log.e(e, e.stack); }
-						} else {
-							log.i('no jobs found to replace for %j, saving new one', query);
-							this.db().collection('jobs').save(this._json, clb);
-						}
-					});
-				} else {
-					this.db().collection('jobs').findAndModify(query, [['_id', 1]], {$set: this._json}, {new: true}, (err, job) => {
-						if (err) {
-							log.e('job replacement error, saving new job', err, job);
-							this.db().collection('jobs').save(this._json, clb);
-						} else if (job && !job.value){
-							log.i('no job found to replace, saving new job', err, job);
-							this.db().collection('jobs').save(this._json, clb);
-						} else {
-							log.i('job replacing done', job.value);
-							resolve(set);
-						}
-					});
-				}
-				
+        return this._save();
+    }
 
-			} else if (this._json._id) {
-				if (set) {
-					for (let k in set) {
-						if (k !== '_id') {
-							this._json[k] = set[k];
-						}
-					}
-				}
-				if (this._isSub()) {
-					query = {_id: this._json._id, 'subs.idx': this._json.idx};
-					if (set) {
-						update = {$set: {'subs.$.modified': this._json.modified}};
-						for (let k in set) {
-							update.$set['subs.$.' + k] = set[k];
-						}
-					} else {
-						update = {$set: {'subs.$': this._json}};
-					}
-				} else {
-					query = {_id: this._json._id};
-					update = {$set: set || this._json};
-					update.$set.modified = this._json.modified;
-				}
-				delete update.$set._id;
-				log.d('saving %j: %j', query, update);
-				this.db().collection('jobs').updateOne(query, update, clb);
-			} else {
-				log.d('saving %j', this._json);
-				this.db().collection('jobs').save(this._json, clb);
-			}
-		}catch(e) {
-			log.e(e, e.stack);
-			throw e;
-		}
-		}).then(() => { this._replace = false; return set; });
-	}
+    /**
+    * Run job once
+    * @param {number|Date} date - date when to run
+    * @param {number} strict (optional) - maximum time in ms after scheduled date the job must be run, otherwise it'd be discarded
+    * @returns {object} result of saving job
+    **/
+    once(date, strict) {
+        this._json.next = typeof date === 'number' ? date : date.getTime();
+        if (strict !== undefined) {
+            this._json.strict = strict;
+        }
 
-	_subSaved () {
-		let set = [{size: 0, done: 0}].concat(this._json.subs).reduce((p, c) => { 
-			return {size: p.size + c.size || 0, done: p.done + c.done || 0}; 
-		});
+        return this._save();
+    }
 
-		let errors = this._json.subs.filter(s => !!s.error).map(s => s.error).map(e => typeof e === 'object' ? e[0] : e),
-			unique = [...new Set(errors)];
+    /**
+    * Run job now
+    * @returns {object} result of saving job
+    **/
+    now() {
+        this._json.next = Date.now();
+        return this._save();
+    }
 
-		set.error = unique.length ? unique.join(', ') : null;
-		set.status = !set.error && this._json.subs.filter(s => s.status !== STATUS.DONE).length ? STATUS.RUNNING : STATUS.DONE;
-		set.duration = Date.now() - this._json.started;
+    /**
+    * Run job in providd amount of seconds
+    * @param {number} seconds - after how many seconds to run the job
+    * @returns {object} result of saving job
+    **/
+    in(seconds) {
+        this._json.next = Date.now() + seconds * 1000;
+        return this._save();
+    }
 
-		if (set.status === STATUS.DONE && !set.finished) {
-			set.finished = Date.now();
-		}
+    /**
+    * Replace existing job if, it exists
+    * @returns {object} self
+    **/
+    replace() {
+        if (this.isInExecutor) {
+            throw new Error('Replace cannot be run from executor');
+        }
+        this._replace = true;
+        return this;
+    }
 
-		log.d('Updating main job after sub update: %j', set);
-		return this._save(set);
-	}
+    /**
+    * Update job atomically
+    * @param {object} db - database connection
+    * @param {object} match - query for job
+    * @param {object} update - update query for job
+    * @param {boolean=} neo - should return new document
+    * @returns {Promise} promise
+    **/
+    static updateAtomically(db, match, update, neo = true) {
+        return new Promise((resolve, reject) => {
+            db.collection('jobs').findAndModify(match, [['_id', 1]], update, {new: neo}, (err, doc) => {
+                if (err) {
+                    reject(err);
+                }
+                else if (!doc || !doc.ok || !doc.value) {
+                    reject('Job not found');
+                }
+                else {
+                    resolve(doc.value);
+                }
+            });
+        });
+    }
 
-	db () {
-		return require('./index.js').db;
-	}
+    /**
+    * Update job
+    * @param {object} db - database connection
+    * @param {object} match - query for job
+    * @param {object} update - update query for job
+    * @returns {Promise} promise
+    **/
+    static update(db, match, update) {
+        return new Promise((resolve, reject) => {
+            db.collection('jobs').updateOne(match, update, (err, res) => {
+                if (err || !res) {
+                    reject(err || 'no res');
+                }
+                else {
+                    resolve(res.matchedCount ? true : false);
+                }
+            });
+        });
+    }
 
-	_isSub () {
-		return typeof this._json.idx !== 'undefined';
-	}
+    /**
+    * Update multiple jobs
+    * @param {object} db - database connection
+    * @param {object} match - query for job
+    * @param {object} update - update query for job
+    * @returns {Promise} promise
+    **/
+    static updateMany(db, match, update) {
+        return new Promise((resolve, reject) => {
+            db.collection('jobs').updateMany(match, update, (err, res) => {
+                if (err || !res) {
+                    reject(err || 'no res');
+                }
+                else {
+                    resolve(res.matchedCount || 0);
+                }
+            });
+        });
+    }
 
-	_divide (subs) {
-		if (this._isSub()) {
-			throw new Error('Sub cannot have subs');
-		}
-		if (!this._json._id) {
-			throw new Error('Not saved job cannot be divided');
-		}
-		
-		this._json.subs = subs.map((s, i) => {
-			let sub = s;
-			sub._id = this._json._id;		// ObjectId
-			sub.status = STATUS.SCHEDULED;
-			sub.name = this.name;
-			sub.created = Date.now();
-			sub.started = null;
-			sub.finished = null;
-			sub.duration = 0;
-			sub.size = s.size || 0;
-			sub.done = s.done || 0;
-			sub.idx = i;
-			delete sub.data.size;
-			delete sub.data.done;
-			return sub;
-		});
-		log.d('%s: divided', this._idIpc);
-		return this._save({subs: this._json.subs});
-	}
+    /**
+    * Insert new job
+    * @param {object} db - database connection
+    * @param {object} data - job document to insert
+    * @returns {Promise} promise
+    **/
+    static insert(db, data) {
+        return new Promise((resolve, reject) => {
+            db.collection('jobs').insertOne(data, (err, res) => {
+                if (err || !res) {
+                    reject(err || 'no res');
+                }
+                else if (res.insertedCount) {
+                    data._id = data._id || res.insertedId;
+                    resolve(data);
+                }
+                else {
+                    resolve(null);
+                }
+            });
+        });
+    }
 
-	_abort (err) {
-		log.d('%s: aborting', this._idIpc);
-		return this._finish(err || 'Aborted');
-		// if (this.retryPolicy().errorIsRetriable(err)) {
-		// 	log.d('%s: won\'t abort since error %j is retriable', this._idIpc, err);
-		// } else {
-		// 	log.d('%s: aborting', this._idIpc);
-		// 	return this._finish(err || 'Aborted');
-		// }
-	}
+    /**
+    * Read job
+    * @param {object} db - database connection
+    * @param {string} id - id of the job
+    * @returns {Promise} promise
+    **/
+    static load(db, id) {
+        return new Promise((resolve, reject) => {
+            db.collection('jobs').findOne({_id: typeof id === 'string' ? db.ObjectID(id) : id}, (err, job) => {
+                if (err || !job) {
+                    reject(err || 'no res');
+                }
+                else {
+                    resolve(job);
+                }
+            });
+        });
+    }
 
-	_pause () {
-		if (this.status === STATUS.RUNNING || this.status === STATUS.SCHEDULED) {
-			this._json.status = STATUS.PAUSED;
-			this._json.duration = Date.now() - this._json.started;
-			log.w('%s: pausing', this._idIpc);
-			return this._save();
-		} else {
-			log.e('%s: cannot pause', this._idIpc);
-			return Promise.reject('Job is not running to pause');
-		}
-	}
+    /**
+    * Read multiple jobs
+    * @param {object} db - database connection
+    * @param {object} match - query for jobs
+    * @returns {Promise} promise
+    **/
+    static findMany(db, match) {
+        return new Promise((resolve, reject) => {
+            db.collection('jobs').find(match).toArray((err, jobs) => {
+                if (err) {
+                    reject(err);
+                }
+                else {
+                    resolve(jobs || []);
+                }
+            });
+        });
+    }
 
-	_resume () {
-		if (this.status !== STATUS.DONE) {
-			this._json.status = STATUS.RUNNING;
-			log.e('%s: resuming', this._idIpc);
-			return this._save();
-			// return new Promise((resolve, reject) => {
-			// 	this._save().then(() => {
-			// 		this._run().then(resolve, reject);
-			// 	}, reject);
-			// });
-		} else {
-			log.e('%s: cannot resume', this._idIpc);
-			return Promise.reject('Job is done, cannot resume');
-		}
-	}
+    /**
+    * Replace jobs that will run after provided timestamp
+    * @param {number} next - timestamp
+    * @param {function} queror - function which modifies query request
+    * @returns {Promise} promise
+    **/
+    replaceAfter(next, queror) {
+        log.d('[!!!!!!!!] %s: replaceAfter %d (%d %j)', this._id, next, this.next, this.data);
+        return new Promise((resolve, reject) => {
+            let query = {
+                status: STATUS.SCHEDULED,
+                name: this.name,
+                next: {$gte: next}
+            };
+            if (this._id) {
+                query._id = {$ne: this._id};
+            }
+            if (this.data && Object.keys(this.data).length) {
+                query.data = this.data;
+            }
+            if (queror) {
+                queror(query);
+            }
 
-	_finish (err, save) {
-		save = typeof save === 'undefined' ? true : save;
-		if (!this.isCompleted) {
-			log.d('Finishing %s' + (save ? ', saving' : ''), this._json._id);
-			this._json.status = STATUS.DONE;
-			this._json.finished = Date.now();
-			this._json.duration = this._json.finished - this._json.started;
-			this._json.error = err;
-			this.emit(EVT.DONE, this._json);
+            log.d('[!!!!!!!!] %s: replaceAfter %d query', this._id, next, query);
 
-			var upd = {status: this._json.status, finished: this._json.finished, duration: this._json.duration, error: this._json.error};
-			if (save) {
-				return this._save(upd);
-			} else {
-				return Promise.resolve(upd);
-			}
-		} else {
-			return Promise.reject('Job has been already finished');
-		}
-	}
+            Job.updateAtomically(this.db(), query, {$set: {next: next}}).then(arg => {
+                log.d('[!!!!!!!!] %s: replaceAfter %d RESOLVE UPDATED: %j', this._id, next, arg);
+                resolve(arg);
+            }, err => {
+                log.d('[!!!!!!!!] %s: replaceAfter %d ERROR %j', this._id, next, err);
+                if (err === 'Job not found') {
+                    query.next = {$lt: next};
+                    Job.findMany(this.db(), query).then(existing => {
+                        log.d('[!!!!!!!!] %s: replaceAfter %d EXISTING %j', this._id, next, existing);
+                        if (existing && existing.length) {
+                            log.d('[!!!!!!!!] %s: replaceAfter %d RESOLVE EXISTING', this._id, next);
+                            resolve(existing[0]);
+                        }
+                        else {
+                            log.d('[!!!!!!!!] %s: replaceAfter %d NEW JOB', this._id, next);
+                            new Job(this.name, this.data).once(next).then((arg) => {
+                                log.d('[!!!!!!!!] %s: replaceAfter %d NEW JOB CREATED %j', this._id, next, arg);
+                                resolve(arg);
+                            }, (e2) => {
+                                log.d('[!!!!!!!!] %s: replaceAfter %d NEW JOB ERROR %j', this._id, next, e2);
+                                reject(e2);
+                            });
+                        }
+                    }, reject);
+                }
+                else {
+                    reject(err);
+                }
+            });
+        });
+    }
 
-	_progress (size, done, bookmark, save) {
-		save = typeof save === 'undefined' ? true : save;
-		if (!this.isCompleted) {
-			this._json.duration = Date.now() - this._json.started;
-			if (size) { this._json.size = size; }
-			if (done) { this._json.done = done; }
-			if (bookmark) { this._json.bookmark = bookmark; }
-			var upd = {duration: this._json.duration, size: size, done: done, bookmark: bookmark};
-			if (save) {
-				return this._save(upd);
-			} else {
-				return Promise.resolve(upd);
-			}
-		} else {
-			return Promise.reject('Job has been already finished');
-		}
-	}
+    /**
+    * Replace all jobs
+    * @param {number} next - timestamp
+    * @returns {object} job data
+    **/
+    async _replaceAll() {
 
-	_run () {
-		var job = this;
-	
-		return new Promise((resolve, reject) => {
-			log.d('job timeout will be %d', job.timeout());
-			var timeout = setTimeout(() => {
-					log.d('%s: timeout called', this._idIpc);
-					if (!job.completed) {
-						if (job._timeoutCancelled()) {
-							log.d('%s: timeout called, but cancelled', this._idIpc);
-						} else {
-							job._abort('Timeout').then(reject, reject);
-						}
-					}
-				}, job.timeout()),
-				// debounce save to once in 500 - 10000 ms
-				debouncedProgress = debounce(() => {
-					if (job._json.status === STATUS.RUNNING) {
-						log.d('progressing job %s: %j', job._id, job._json);
-						job._progress.apply(job, arguments);
-					} else {
-						log.d('won\'t progress job %s: %j', job._id, job._json);
-					}
-				}, 500, 10000),
-				progressSave = (size, done, bookmark) => {
-					if (size) { job._json.size = size; }
-					if (done) { job._json.done = done; }
-					if (bookmark) { job._json.bookmark = bookmark; }
-					debouncedProgress(size, done, bookmark);
-				};
+        let query = {
+            status: STATUS.SCHEDULED,
+            name: this.name
+        };
+        if (this.data && Object.keys(this.data).length) {
+            query.data = this.data;
+        }
 
-			job._json.status = STATUS.RUNNING;
+        log.i('Replacing jobs %s (%j)', this.name, query);
 
-			job.run(
-				this.db(),
-				(err) => {
-					log.d('%s: done running: error %j', this._idIpc, err);
-					clearTimeout(timeout);
-					if (!job.completed) {
-						job._finish(err).then(
-							err ? reject.bind(null, err) : resolve,
-							err ? reject.bind(null, err) : reject
-						);
-					}
-				},
-				(size, done, bookmark) => {
-					log.d('%s: progress %j / %j / %j', this._idIpc, size, done, bookmark);
-					clearTimeout(timeout);
-					timeout = setTimeout(() => {
-						log.d('%s: progress timeout called', this._idIpc);
-						if (!job.completed) {
-							if (job._timeoutCancelled()) {
-								log.d('%s: progress timeout called, but cancelled', this._idIpc);
-							} else {
-								job._abort('Timeout').then(reject, reject);
-							}
-						}
-					}, job.timeout());
+        if (this._json.schedule) {
+            // query.next = {$lte: Date.now() + 30000};
+            let updated = await Job.updateMany(this.db(), query, {$set: {status: STATUS.CANCELLED}});
+            if (updated) {
+                log.i('Cancelled %d previous jobs %s (%j)', updated, this.name, query);
+            }
 
-					if (!job.completed) {
-						progressSave(size, done, bookmark);
-					}
-				});
-		});
-	}
+            // delete query.next;
+        }
 
-	_runWithRetries() {
-		return this.retryPolicy().run(this._run.bind(this));
-	}
+        let existing = await Job.findMany(this.db(), query);
+        if (existing.length === 1) {
+            log.i('No need for replace of %s (%j): existing job %j', this.name, this.data, existing[0]);
+            this._json = existing[0];
+            return existing[0];
 
-	/**
-	 * Override if job is big and can be split into several parts.
-	 * Must return a promisified object like {workers: 5, subs: []}. Workers is max number of subjobs running at a time,
-	 * Subs is either zero-length array if no division should be done in this case, or an array of objects which will become subjobs. 
-	 * In case of subjobs, run() method will be called for each subjob, but not for parent job. Once all subjobs are done, parent job is considered done as well.
-	 */
-	divide (/*db*/) {
-		return Promise.resolve({workers: 0, subs: []});
-	}
+        }
+        else if (existing.length === 0) {
+            log.i('No job to replace, inserting %j', this._json);
+            let inserted = await Job.insert(this.db(), this._json);
+            if (!inserted) {
+                throw new Error('Cannot insert a job');
+            }
+            this._json = inserted;
+            return inserted;
+        }
+        else {
+            let last = existing.sort((a, b) => b.next - a.next)[0],
+                others = existing.filter(a => a !== last);
 
-	/**
+            log.i('replacing last job %j with %j', last, this._json);
+
+            if (others.length) {
+                await Job.updateMany(this.db(), {_id: {$in: others.map(o => o._id)}}, {$set: {status: STATUS.CANCELLED}});
+            }
+
+            let neo;
+            try {
+                neo = await Job.updateAtomically(this.db(), query, {$set: this._json});
+            }
+            catch (e) {
+                log.w('Job was modified while rescheduling, skipping', e);
+            }
+
+            if (!neo) {
+                log.w('Job was modified while rescheduling, skipping');
+                return null;
+            }
+            this._json = neo;
+            return neo;
+        }
+    }
+
+    /**
+    * Save job
+    * @param {boolean} set - if should update instead of creating
+    * @returns {object} job data
+    **/
+    async _save(set) {
+        if (set) {
+            log.d('Updating job %s with %j', this.id, set);
+        }
+        else {
+            log.d('Creating job %s with data %j', this.name, this.data);
+        }
+
+        if (this._replace) {
+            return await this._replaceAll();
+        }
+        else if (this._id) {
+            if (set) {
+                Object.keys(set).forEach(k => {
+                    this._json[k] = set[k];
+                });
+            }
+            else {
+                set = Object.assign({}, this._json);
+                delete set._id;
+            }
+
+            set.modified = Date.now();
+            if (this._json.started || set.started) {
+                set.duration = set.modified - (this._json.started || set.started);
+            }
+
+            let updated = await Job.update(this.db(), {_id: this._id}, {$set: set});
+            if (updated) {
+                return set;
+            }
+            else {
+                throw new Error('No such job in db');
+            }
+        }
+        else {
+            Object.keys(set || {}).forEach(k => {
+                this._json[k] = set[k];
+            });
+
+            let inserted = await Job.insert(this.db(), this._json);
+            if (inserted) {
+                return inserted;
+            }
+            else {
+                throw new Error('Cannot insert a job');
+            }
+        }
+    }
+
+    // _save (set) {
+    // 	return new Promise((resolve, reject) => {
+    // 		try {
+    // 			this._json.modified = Date.now();
+    // 			var query, update, clb = (err, res) => {
+    // 				if (err) { 
+    // 					if (this._errorCount++ < MAXIMUM_SAVE_ERRORS) {
+    // 						log.w('Error while saving job: %j', err);
+    // 						setTimeout(() => {
+    // 							this._save(set).then(resolve.bind(null, set), reject);
+    // 						}, 1000); 
+    // 					} else {
+    // 						log.e('Error while saving job: %j', err);
+    // 						reject(err);
+    // 					}
+    // 				} else if (res.result.nModified === 0) {
+    // 					log.e('Job %s has been changed while doing _save: %j / setting %j for query %j', this._id, this._json, update, query);
+    // 					reject('Job cannot be found while doing _save');
+    // 				} else {
+    // 					resolve(set || this._json);
+    // 				}
+    // 			};
+
+    // 			if (this._replace) {
+    // 				query = {status: STATUS.SCHEDULED, name: this.name};
+    // 				if (this.data) { query.data = this.data; }
+
+    // 				if (this._json.schedule) {
+    // 					let schedule = typeof this._json.schedule === 'string' ? later.parse.text(this._json.schedule) : this._json.schedule,
+    // 						prev = later.schedule(schedule).prev(1);
+
+    // 					log.i('replacing job %j with', query, this._json);
+    // 					this.db().collection('jobs').find(query).toArray((err, jobs) => {
+    // 						if (err) {
+    // 							log.e('job replacement error when looking for existing jobs to replace', err);
+    // 							this.db().collection('jobs').save(this._json, clb);
+    // 						} else if (jobs && jobs.length) {
+    // 							try {
+    // 							let last = jobs.sort((a, b) => b.next - a.next)[0];
+    // 							let others = jobs.filter(a => a !== last);
+    // 							if (others.length) {
+    // 								log.i('found %d jobs with %j, going to cancel %j', jobs.length, query, others.map(j => j._id));
+    // 								Promise.all(others.map(j => {
+    // 									return require('./index.js').create(j).cancel(this.db(), false);
+    // 								}));
+    // 								// this.db().collection('jobs').update({_id: {$in: others.map(j => j._id)}}, {$set: {status: STATUS.CANCELLED}}, {multi: true}, log.logdb(''));
+    // 							}
+
+    // 							if (last.schedule === this._json.schedule && last.next > prev.getTime()) {
+    // 								// just do nothing
+    // 								log.i('last job is scheduled correctly, won\'t replace anything for %j: current %j, won\'t replace to %j', query, new Date(last.next), new Date(this.next));
+    // 								resolve(set);
+    // 							} else {
+    // 								log.i('replacing last job %j with %j', last, this._json);
+    // 								this.db().collection('jobs').findAndModify(query, [['_id', 1]], {$set: this._json}, {new: true}, (err, job) => {
+    // 									if (err) {
+    // 										log.e('job replacement error, saving new job', err, job);
+    // 										this.db().collection('jobs').save(this._json, clb);
+    // 									} else if (job && !job.value){
+    // 										log.i('no job found to replace, saving new job', err, job);
+    // 										this.db().collection('jobs').save(this._json, clb);
+    // 									} else {
+    // 										log.i('job replacing done', job.value);
+    // 										resolve(set);
+    // 									}
+    // 								});
+    // 							}
+    // 						}catch(e) { log.e(e, e.stack); }
+    // 						} else {
+    // 							log.i('no jobs found to replace for %j, saving new one', query);
+    // 							this.db().collection('jobs').save(this._json, clb);
+    // 						}
+    // 					});
+    // 				} else {
+    // 					this.db().collection('jobs').findAndModify(query, [['_id', 1]], {$set: this._json}, {new: true}, (err, job) => {
+    // 						if (err) {
+    // 							log.e('job replacement error, saving new job', err, job);
+    // 							this.db().collection('jobs').save(this._json, clb);
+    // 						} else if (job && !job.value){
+    // 							log.i('no job found to replace, saving new job', err, job);
+    // 							this.db().collection('jobs').save(this._json, clb);
+    // 						} else {
+    // 							log.i('job replacing done', job.value);
+    // 							resolve(set);
+    // 						}
+    // 					});
+    // 				}
+
+
+    // 			} else if (this._json._id) {
+    // 				if (set) {
+    // 					for (let k in set) {
+    // 						if (k !== '_id') {
+    // 							this._json[k] = set[k];
+    // 						}
+    // 					}
+    // 				}
+    // 				query = {_id: this._json._id};
+    // 				update = {$set: set || this._json};
+    // 				update.$set.modified = this._json.modified;
+    // 				delete update.$set._id;
+    // 				log.d('saving %j: %j', query, update);
+    // 				this.db().collection('jobs').updateOne(query, update, clb);
+    // 			} else {
+    // 				log.d('saving %j', this._json);
+    // 				this._json._id = this.db().ObjectID();
+    // 				this.db().collection('jobs').save(this._json, clb);
+    // 			}
+    // 		} catch(e) {
+    // 			log.e(e, e.stack);
+    // 			throw e;
+    // 		}
+    // 	}).then(() => { this._replace = false; return set; });
+    // }
+
+    /**
+    * Get database connection
+    * @returns {object} db
+    **/
+    db() {
+        return require('./index.js').db;
+    }
+
+    /**
+    * Abort job
+    * @param {Error} err - error with which to abort
+    * @returns {Promise} promise
+    **/
+    _abort(err) {
+        log.d('%s: aborting', this.channel);
+        return this._finish(err || 'Aborted');
+        // if (this.retryPolicy().errorIsRetriable(err)) {
+        // 	log.d('%s: won\'t abort since error %j is retriable', this._idIpc, err);
+        // } else {
+        // 	log.d('%s: aborting', this._idIpc);
+        // 	return this._finish(err || 'Aborted');
+        // }
+    }
+
+    /**
+    * Finish job
+    * @param {Error=} err - error with which to finish
+    * @returns {Promise} promise
+    **/
+    _finish(err) {
+        if (this.isCompleted) {
+            return Promise.resolve();
+        }
+        else {
+            log.d('%s: finishing', this.id);
+            this._json.status = STATUS.DONE;
+            this._json.finished = Date.now();
+            this._json.duration = this._json.finished - this._json.started;
+            this._json.error = err ? (err.message || err.code || (typeof err === 'string' ? err : JSON.stringify(err))) : null;
+            this.emit(EVT.DONE, this._json);
+            return this._save({
+                status: this._json.status,
+                finished: this._json.finished,
+                duration: this._json.duration,
+                error: this._json.error
+            });
+        }
+    }
+
+    /**
+    * Internal run function for managing states
+    * @returns {Promise} promise
+    **/
+    _run() {
+        return new Promise((resolve, reject) => {
+            this._json.status = STATUS.RUNNING;
+            this._json.started = Date.now();
+            this._save({
+                status: STATUS.RUNNING,
+                started: this._json.started
+            });
+
+            try {
+                let promise = this.run(
+                    this.db(),
+                    (err) => {
+                        log.d('%s: done running: error %j', this.id, err);
+                        if (!this.isCompleted) {
+                            this._finish(err).then(
+                                err ? reject.bind(null, err) : resolve,
+                                err ? reject.bind(null, err) : reject
+                            );
+                        }
+                    },
+                    () => {});
+
+                if (promise && promise instanceof Promise) {
+                    promise.then(() => {
+                        log.d('%s: done running', this.id);
+                        this._finish().then(resolve, resolve);
+                    }, (err) => {
+                        log.d('%s: done running: error %j', this.id, err);
+                        if (!this.isCompleted) {
+                            this._finish(err).then(reject.bind(null, err), reject.bind(null, err));
+                        }
+                    });
+                }
+            }
+            catch (e) {
+                log.e('[%s] caught error when running: %j / %j', this.channel, e, e.stack);
+                this._finish(e).then(reject.bind(null, e), reject.bind(null, e));
+            }
+        });
+    }
+
+    /**
+    * Run job with retry policy applied
+    * @returns {Promise} promise
+    **/
+    _runWithRetries() {
+        return this.retryPolicy().run(this._run.bind(this));
+    }
+
+    /**
 	 * Override in actual job class
-	 * Takes 2 parameters omitted for the sake of JSHint:
+	 * Takes 2 parameters omitted for the sake of ESLint:
 	 * 		- db - db connection which must be used for this job in most cases, otherwise you're responsible for opening / closing an appropriate connection
-	 * 		- done - function which must be called when job processing is done with either no arguments or error string
-	 *  	- progress - optional progress callback which takes 3 params: size (0..N) part (0..N) & bookmark (any object). Bookmark allows job to be resumed after server restart (this.bookmark)
-	 *					IMPORTANT! When progress returns true, job can continue to run. In case it's false, job has to finish itself ASAP since it's aborted or paused (this.canRun). 
+	 * 		- done - function which must be called (when promise is not returned) when job processing is done with either no arguments or error string
+	 * 		
 	 */
-	run (/*db, done, progress*/) {
-		throw new Error("Job must be overridden");
-	}
+    run(/*db, done*/) {
+        throw new Error('Job must be overridden');
+    }
 
-	/**
+    /**
 	 * Override if job needs a graceful cancellation. Job is cancelled in two cases:
 	 * 		1. When server is restarted and last modification of the job was too long ago to consider it not running (becauseOfRestart = true).
 	 * 		2. When server was not running at the time strict job should have been run (becauseOfRestart = false).
+     * @returns {Promise} promise
 	 */
-	cancel (/*db, becauseOfRestart*/) {
-		return this._save({status: STATUS.CANCELLED, error: 'Cancelled on restart', done: Date.now()});
-	}
+    cancel(/*db, becauseOfRestart*/) {
+        return this._save({
+            status: STATUS.CANCELLED,
+            error: 'Cancelled on restart',
+            modified: Date.now(),
+            finished: Date.now()
+        });
+    }
 
-	/**
+    /**
 	 * Override if default policy isn't good enough
+     * @returns {RetryPolicy} retry policy
 	 */
-	retryPolicy () {
-		return new retry.DefaultRetryPolicy(3);
-	}
+    retryPolicy() {
+        return new retry.DefaultRetryPolicy(3);
+    }
 
-	/**
+    /**
 	 * Override if job needs a manager instance to run
+     * @returns {Promise} promise
 	 */
-	prepare (/*manager*/) {
-		return Promise.resolve();
-	}
+    prepare(/*manager, db*/) {
+        return Promise.resolve();
+    }
 
-	/**
+    /**
 	 * Override if 0 doesn't work for this job:
 	 *  0 = default = run jobs of this type on any number of servers, with any number of jobs running at the same time
 	 *  1 ... N = run not more than N jobs of this time at the same time
+     * @returns {number} concurrency
 	 */
-	getConcurrency () {
-		return 0;
-	}
+    getConcurrency() {
+        return 0;
+    }
 }
 
 /**
@@ -579,30 +877,29 @@ class Job extends EventEmitter {
  * Resource lives longer than a single job and reassigned from one job to another when first one is done. 
  */
 class ResourcefulJob extends Job {
-	createResource (/*_id, name, options */) {
-		throw new Error('ResourcefulJob.createResource must be overridden to return possibly open resource instance');
-	}
+    /** Create resource **/
+    createResource(/*_id, name, options */) {
+        throw new Error('ResourcefulJob.createResource must be overridden to return possibly open resource instance');
+    }
 
-	releaseResource (/* resource */) {
-		throw new Error('ResourcefulJob.releaseResource must be overridden to return possibly open resource instance');
-	}
+    /** Release resource **/
+    releaseResource(/* resource */) {
+        throw new Error('ResourcefulJob.releaseResource must be overridden to return possibly open resource instance');
+    }
 
-	resourceName () {
-		throw new Error('ResourcefulJob.resourceName must be overridden to return non-unique string which identifies type of a resource');
-	}
+    /** Get resource name **/
+    resourceName() {
+        throw new Error('ResourcefulJob.resourceName must be overridden to return non-unique string which identifies type of a resource');
+    }
 }
 
 /**
  * Job which runs in 2 processes:
- * - Initiator process (Countly master) creates subprocess (fork of executor.js) and processes IPC messages from subprocess persisting them in DB.
- * - Subprocess actually runs the job, but sends state updates through IPC instead of saving it into DB.
+ * - Initiator process (Countly master) creates subprocess (fork of executor.js) and processes IPC messages from subprocess
+ * - Subprocess actually runs the job, but sends state updates through IPC, keeping all listeners aware of its lifecycle
  *
- * This complex structure gives following advantages:
+ * This complex structure gives following advantage:
  * - Subprocess can safely crash, initiator process will be able to just restart the job in a new subprocess from the point it stopped.
- * - The job can be divided across multiple subprocesses while progress updates will be run in a single master process, 
- *   removing race conditions and excess DB load.
- * - Subprocess can run without any DB at all (see TransientJob below) removing unnecessary persistence in DB between job 
- *   creator and actual job running. Unnecessary persistence substantially increases latency and substantially increases complexity of interactions.
  * 
  * Extends ResourcefulJob, meaning job resource can live longer than job and reassigned to other job after current job is done.
  *
@@ -610,289 +907,194 @@ class ResourcefulJob extends Job {
  */
 class IPCJob extends ResourcefulJob {
 
-	retryPolicy () {
-		return new retry.IPCRetryPolicy(1);
-	}
+    /**
+    * Check if job is run in executor
+    * @returns {boolean} if job is run in executor
+    **/
+    get isInExecutor() {
+        return process.argv[1].endsWith('executor.js');
+    }
 
-	releaseResource (/* resource */) {
-		return Promise.resolve();
-	}
+    /**
+    * Get retry policy
+    * @returns {RetryPolicy} retry policy
+    **/
+    retryPolicy() {
+        return new retry.IPCRetryPolicy(1);
+    }
 
-	_sendSave(data) {
-		if (process.send) {
-			log.d('[%d]: Sending progress update %j', process.pid, {
-				_id: this._idIpc,
-				cmd: EVT.SAVE,
-				from: process.pid,
-				data: data || this._json
-			});
-			process.send({
-				_id: this._idIpc,
-				cmd: EVT.SAVE,
-				from: process.pid,
-				data: data || this._json
-			});
-		} else {
-			this._save.apply(this, arguments);
-		}
-	}
+    /**
+    * Release resource
+    * @returns {Promise} promise
+    **/
+    releaseResource(/* resource */) {
+        return Promise.resolve();
+    }
 
-	_run(/* , resource */) {
-		log.d('%s: entering IPCJob promise', this._idIpc);
-
-		return new Promise((resolve, reject) => {
-			var timeout = setTimeout(() => {
-					log.d('%s: first timeout called in IPCJob', this._idIpc);
-					if (!this.isCompleted) {
-						if (this._timeoutCancelled()) {
-							log.d('%s: timeout called in IPCJob, but cancelled', this._idIpc);
-						} else {
-							this._json.status = STATUS.DONE;
-							this._json.finished = Date.now();
-							this._json.duration = this._json.finished - this._json.started;
-							this._json.error = ERROR.TIMEOUT;
-							this._sendSave({status: this._json.status, finished: this._json.finished, duration: this._json.duration, error: this._json.error});
-							reject(ERROR.TIMEOUT);
-						}
-					}
-				}, this.timeout()),
-				// debounce save to once in 500 - 10000 ms
-				progressSave = debounce((size, done, bookmark) => {
-					if (size) { this._json.size = size; }
-					if (done) { this._json.done = done; }
-					if (bookmark) { this._json.bookmark = bookmark; }
-					this._sendSave({size: size, done: done, bookmark: bookmark});
-				}, 500, 10000);
-
-			this._json.status = STATUS.RUNNING;
-			this._json.started = Date.now();
-
-			try {
-			this._sendSave({status: this._json.status, started: this._json.started});
-			this.run(
-				this.db(),
-				(err, result) => {
-					log.d('%s: done running, status %d' + (err ? ' with error ' + err : ''), this._id, this._json.status);
-					clearTimeout(timeout);
-					if (!this.isCompleted) {
-						log.d('%s: finishing', this._idIpc); 
-			
-						this._json.status = STATUS.DONE;
-						this._json.finished = Date.now();
-						this._json.duration = this._json.finished - this._json.started;
-						this._json.error = err;
-
-						let upd = {status: this._json.status, finished: this._json.finished, duration: this._json.duration, error: this._json.error};
-						if (result) {
-							upd.result = result;
-						}
-
-						if (err) {
-							reject(err);
-						} else {
-							resolve(upd);
-						}
-					}
-				},
-				(size, done, bookmark) => {
-					clearTimeout(timeout);
-					timeout = setTimeout(() => {
-						log.w('%s: progress timeout called in IPCJob', this._idIpc);
-						if (!this.isCompleted) {
-							if (this._timeoutCancelled()) {
-								log.d('%s: progress timeout called in IPCJob, but cancelled', this._idIpc);
-							} else {
-								this._json.status = STATUS.PAUSED;
-								// this._json.finished = Date.now();
-								// this._json.duration = this._json.finished - this._json.started;
-								this._json.size = this._json.done;
-								// this._json.error = ERROR.TIMEOUT;
-								// this._sendSave({status: this._json.status, finished: this._json.finished, duration: this._json.duration, error: this._json.error});
-								reject(ERROR.TIMEOUT);
-							}
-						}
-					}, this.timeout());
-
-					if (!this.isCompleted) {
-						progressSave(size, done, bookmark);
-					}
-				}
-			);
-		} catch (e) { log.e(e, e.stack); }
-		});
-	}
-
-	// _save() {
-	// 	throw new Error('IPCJob._save should not be called');
-	// }
+    /**
+    * Save resource data
+    * @param {object} data - resource data
+    * @returns {Promise} promise
+    **/
+    _save(data) {
+        if (process.send) {
+            log.d('[%d]: Sending progress update %j', process.pid, {
+                _id: this.channel,
+                cmd: EVT.UPDATE,
+                from: process.pid,
+                data: data
+            });
+            process.send({
+                _id: this.channel,
+                cmd: EVT.UPDATE,
+                from: process.pid,
+                data: data
+            });
+        }
+        return super._save.apply(this, arguments);
+    }
 }
-
+/** Listens for IPC status messages from subprocess and persists them in DB **/
 class IPCFaçadeJob extends ResourcefulJob {
-	constructor(job, getResourceFaçade) {
-		super(job._json, null, null);
-		this.job = job;
-		this.getResourceFaçade = getResourceFaçade;
-	}
+    /**
+    * Constructor
+    * @param {Job} job - job
+    * @param {function} getResourceFaçade - function to get resource
+    **/
+    constructor(job, getResourceFaçade) {
+        super(job._json, null, null);
+        this.job = job;
+        this.getResourceFaçade = getResourceFaçade;
+    }
 
-	createResource () {
-		return this.getResourceFaçade();
-	}
+    /**
+    * Create resource
+    * @returns {object} resource
+    **/
+    createResource() {
+        log.d('[%s] IPCFaçadeJob creates a resource', this.job.channel);
+        return this.getResourceFaçade();
+    }
 
-	resourceName () {
-		return this.job.resourceName();
-	}
+    /**
+    * Get resource name
+    * @returns {string} resource name
+    **/
+    resourceName() {
+        return this.job.resourceName();
+    }
 
-	releaseResource (resource) {
-		return this.job.releaseResource(resource);
-	}
+    /**
+    * Release resource
+    * @param {object} resource to release
+    * @returns {Promise} promise
+    **/
+    releaseResource(resource) {
+        log.d('[%s] IPCFaçadeJob releases its resource', this.job.channel);
+        return this.job.releaseResource(resource);
+    }
 
-	retryPolicy () {
-		return this.job.retryPolicy();
-	}
+    /**
+    * Get retry policy
+    * @returns {RetryPolicy} retry policy
+    **/
+    retryPolicy() {
+        return this.job.retryPolicy();
+    }
 
-	timeout () {
-		return this.job.timeout();
-	}
+    /**
+    * Run the job
+    * @returns {Promise} promise
+    **/
+    _run() {
+        log.d('[%s] Running in IPCFaçadeJob', this.job.channel);
+        try {
+            this.resourceFaçade = this.getResourceFaçade();
+        }
+        catch (e) {
+            log.d('[%s] Caught Façade error: %j', this.job.channel, e);
+            return Promise.reject(e);
+        }
 
-	// _run(parent) {
-	// 	try {
+        this.ipcChannel = new ipc.IdChannel(this.job.channel).attach(this.resourceFaçade._worker);
+        this.ipcChannel.on(EVT.UPDATE, (json) => {
+            log.d('[%s] UPDATE in IPCFaçadeJob: %j', this.job.channel, json);
+            for (var k in json) {
+                this.job._json[k] = json[k];
+            }
+            if (json.status) {
+                this.emit(EVT.UPDATE, json);
+            }
+        });
 
-	// 		this._parent = parent;
-	// 		log.d('[jobs]: Running IPCFaçadeJob for %s in %s', this.job._idIpc, this.resourceFaçade._id);
-	// 		this.channel = new ipc.IdChannel(this.job._idIpc).attach(this.resourceFaçade._worker);
-	// 		this.channel.on(EVT.SAVE, (json) => {
-	// 			this.job._json.duration = json.duration = Date.now() - this.job._json.started;
-	// 			this.job._save(json);
-	// 			parent._subSaved(this.job);
-	// 		});
+        return this.resourceFaçade.run(this).then(() => {
+            this.ipcChannel.remove();
+        }, (error) => {
+            this.ipcChannel.remove();
+            log.e('[%s] Error in IPCFaçadeJob %s: %j / %j', this.job.channel, this.resourceFaçade._id, error, error.stack);
+            this.job._finish(error || 'Aborted').catch(()=>{});
+            throw error;
+        });
+    }
 
-	// 		if (!this.promise) {
-	// 			this.promise = new Promise((resolve, reject) => {
-	// 				this.resolve = (json) => {
-	// 					log.i('[jobs]: Done running %s in IPCFaçadeJob with success', this.job._idIpc);
-	// 					try {
-	// 						this.channel.remove();
-	// 						this.job._save(json);
-	// 						parent._subSaved(this.job);
-	// 						resolve(json);
-	// 					} catch (e) {
-	// 						log.e(e, e.stack);
-	// 					}
-	// 				};
-	// 				this.reject = (error) => {
-	// 					log.i('[jobs]: Done running %s in IPCFaçadeJob with error', this.job._idIpc);
-	// 					this.job._finish(error);
-	// 					parent._subSaved(this.job);
-	// 					this.channel.remove();
-	// 					reject(error);
-	// 				};
-	// 			});
-	// 		}
-	// 	} catch (e) {
-
-	// 	}
-	// }
-
-	_run() {
-		this.resourceFaçade = this.getResourceFaçade();
-
-		this.channel = new ipc.IdChannel(this.job._idIpc).attach(this.resourceFaçade._worker);
-		this.channel.on(EVT.SAVE, (json) => {
-			this.job._save(json);
-		});
-
-		return this.resourceFaçade.run(this).then((json) => {
-			this.job._save(json);
-			this.channel.remove();
-		}, (error) => {
-			this.channel.remove();
-			log.e('Error in resource façade %s: ', this.resourceFaçade._id, error, error.stack);
-			this.job._abort(error);
-			throw error;
-		});
-	}
-
-	_abort(error) {
-		log.w('%s: ABORTING in IPCFaçadeJob', this.job._idIpc);
-		this.resourceFaçade.abort(error);
-	}
+    /**
+    * Abort the job
+    * @param {Error} error - error with which to abort
+    **/
+    _abort(error) {
+        log.w('%s: ABORTING in IPCFaçadeJob', this.job.channel);
+        this.resourceFaçade.abort(error);
+    }
 }
 
+/** Class for transiend jobs **/
 class TransientJob extends IPCJob {
-	_sendSave(data) {
-		log.d('Transient job got _sendSave: %j', data);
-	}
+    /**
+    * Send data for current channel
+    * @param {object} data - data to send
+    **/
+    _sendAndSave(data) {
+        log.d('[%s] transient _sendAndSave: %j', this.channel, data);
+    }
 
-	_save (set) {
-		if (set) {
-			for (let k in set) {
-				if (k !== '_id') {
-					this._json[k] = set[k];
-				}
-			}
-		}
-		return Promise.resolve(set);
-	}
+    /**
+    * Save data
+    * @param {object} data - data to save
+    * @returns {Promise} promise
+    **/
+    _save(data) {
+        if (process.send) {
+            log.d('[%d]: Sending progress update %j', process.pid, {
+                _id: this.channel,
+                cmd: EVT.UPDATE,
+                from: process.pid,
+                data: data
+            });
+            process.send({
+                _id: this.channel,
+                cmd: EVT.UPDATE,
+                from: process.pid,
+                data: data
+            });
+        }
+        if (data) {
+            for (let k in data) {
+                if (k !== '_id') {
+                    this._json[k] = data[k];
+                }
+            }
+        }
+        return Promise.resolve(data);
+    }
 }
-
-// class TransientJob extends Job {
-// 	_save (set) {
-// 		if (set) {
-// 			for (let k in set) {
-// 				if (k !== '_id') {
-// 					this._json[k] = set[k];
-// 				}
-// 			}
-// 		}
-// 		return Promise.resolve(set);
-// 	}
-// }
-
-class TransientFaçadeJob extends IPCFaçadeJob {
-	_run(parent) {
-		this._parent = parent;
-		log.d('%s: running TransientJob', this.job._idIpc);
-		this.resourceFaçade = this.getResourceFaçade();
-		this.channel = new ipc.IdChannel(this.job._idIpc).attach(this.resourceFaçade._worker);
-		this.channel.on(EVT.SAVE, (json) => {
-			this.job._json.duration = json.duration = Date.now() - this.job._json.started;
-		});
-
-		if (!this.promise) {
-			this.promise = new Promise((resolve, reject) => {
-				this.resolve = (json) => {
-					log.d('%s: done running in IPCFaçadeJob with success', this.job._idIpc);
-					this.channel.remove();
-					resolve(json);
-				};
-				this.reject = (error) => {
-					log.d('%s: done running in IPCFaçadeJob with error', this.job._idIpc);
-					this.channel.remove();
-					reject(error);
-				};
-			});
-		}
-
-		this.resourceFaçade.run(this).then(this.resolve.bind(this), this.reject.bind(this));
-
-		return this.promise;
-	}
-
-	timeout () {
-		return 300000;
-	}
-}
-
-
 
 module.exports = {
-	EVT: EVT,
-	ERROR: ERROR,
-	Job: Job,
-	IPCJob: IPCJob,
-	IPCFaçadeJob: IPCFaçadeJob,
-	TransientJob: TransientJob,
-	TransientFaçadeJob: TransientFaçadeJob,
-	STATUS: STATUS,
-	debounce: debounce
+    EVT: EVT,
+    ERROR: ERROR,
+    Job: Job,
+    IPCJob: IPCJob,
+    IPCFaçadeJob: IPCFaçadeJob,
+    TransientJob: TransientJob,
+    STATUS: STATUS,
+    debounce: debounce
 };

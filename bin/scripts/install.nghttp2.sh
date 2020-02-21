@@ -20,8 +20,9 @@ elif [ -n "$(command -v yum)" ]; then
     # wget http://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/i386/os/Packages/c/crypto-policies-20160516-1.git8f69c35.fc25.noarch.rpm
 
     if grep -q -i "release 6" /etc/redhat-release ; then
-        wget ftp://ftp.pbone.net/mirror/ftp5.gwdg.de/pub/opensuse/repositories/home:/monkeyiq:/centos6updates/CentOS_CentOS-6/noarch/autoconf-2.69-12.2.noarch.rpm
-        rpm -i --force autoconf-2.69-12.2.noarch.rpm
+        wget https://rpmfind.net/linux/Mandriva/devel/cooker/x86_64/media/main/release/autoconf-2.69-1-mdv2012.0.noarch.rpm
+        rpm -i --force autoconf-2.69-1-mdv2012.0.noarch.rpm
+        rm -f autoconf-2.69-1-mdv2012.0.noarch.rpm
         # wget https://www.softwarecollections.org/en/scls/praiskup/autotools/epel-6-x86_64/download/praiskup-autotools-epel-6-x86_64.noarch.rpm
         # rpm -i praiskup-autotools-epel-6-x86_64.noarch.rpm
         # yum install -y autotools-latest
@@ -29,7 +30,7 @@ elif [ -n "$(command -v yum)" ]; then
     fi
 
     yum install -y git make binutils autoconf automake makedepend libtool pkgconfig zlib-devel libxml2-devel python-setuptools
-    wget https://openssl.org/source/openssl-1.0.2h.tar.gz
+    wget https://www.openssl.org/source/openssl-1.0.2h.tar.gz
     tar -zxvf openssl-1.0.2h.tar.gz -C /usr/local/src
     cd /usr/local/src/openssl-1.0.2h
     ./config --prefix=/usr
@@ -38,10 +39,16 @@ elif [ -n "$(command -v yum)" ]; then
     make install
     # mv /usr/bin/openssl /root/
     # ln -s /usr/local/ssl/bin/openssl /usr/bin/openssl
-    cd $DIR
+    cd "$DIR"
 fi
-git clone https://github.com/nghttp2/nghttp2.git $DIR/nghttp2
-cd $DIR/nghttp2
-git checkout tags/v1.12.0
+
+#clean folder if exists
+if [ -d "$DIR/nghttp2" ]; then
+    rm -rf "$DIR/nghttp2"
+fi
+
+git clone https://github.com/nghttp2/nghttp2.git "$DIR/nghttp2"
+cd "$DIR/nghttp2"
+git checkout tags/v1.30.0
 export CFLAGS="-g -O2 -fPIC" && export CPPFLAGS="-fPIC" && autoreconf -i && automake && autoconf && ./configure --disable-examples --disable-app && make && make install
 npm install -g --unsafe-perm node-gyp
