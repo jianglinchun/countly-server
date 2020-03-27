@@ -421,32 +421,14 @@ var pluginManager = function pluginManager() {
         events[event].push(callback);
     };
 
-    var makeSettlePromise = function(promise) {
-        return new Promise(function(resolve) {
-            if (!(promise instanceof Promise)) {
-                resolve({ status: 'fulfilled', value: promise });
-                return;
-            }
-            promise.then(
-                (value) => {
-                    resolve({ status: 'fulfilled', value });
-                },
-                (reason) => {
-                    resolve({ status: 'rejected', reason });
-                }
-            );
-        });
-    };
-
-    // This is compatible with Node 12.9 Promise.allSettled()
-    var allSettled = function(promises) {
-        return new Promise(function(resolve) {
-            var settlePromises = promises.map(makeSettlePromise);
-            Promise.all(settlePromises).then(resolve);
-        });
-    };
-
-    var dispatchInternal = function(event, params, syncPrimitive, callback) {
+    /**
+    * Dispatch specific event on api side
+    * @param {string} event - event to dispatch
+    * @param {object} params - object with parameters to pass to event
+    * @param {function} callback - function to call, when all event handlers that return Promise finished processing
+    * @returns {boolean} true if any one responded to event
+    **/
+    this.dispatch = function(event, params, callback) {
         var used = false,
             promises = [];
         var promise;
@@ -466,27 +448,33 @@ var pluginManager = function pluginManager() {
             //should we create a promise for this dispatch
             if (params && params.params && params.params.promises) {
                 params.params.promises.push(new Promise(function(resolve) {
-                    /**
-                    * Resolved promise handler
-                    * @param {object} err - error if any
-                    * @param {object} data - data passed to be resolved
-                    **/
-                    function resolver(err, data) {
+                    Promise.allSettled(promises).then(function(results) {
+                        results = results.map(function(result) {
+                            if (result.isRejected()) {
+                                console.log(result.reason());
+                            }
+                            else {
+                                return result.value();
+                            }
+                        });
                         resolve();
                         if (callback) {
-                            callback(err, data);
+                            callback(null, results);
                         }
-                    }
-                    syncPrimitive(promises).then(resolver.bind(null, null)).catch(function(error) {
-                        console.log(error);
-                        resolver(error);
                     });
                 }));
             }
             else if (callback) {
-                syncPrimitive(promises).then(callback.bind(null, null)).catch(function(error) {
-                    console.log(error);
-                    callback(error);
+                Promise.allSettled(promises).then(function(results) {
+                    results = results.map(function(result) {
+                        if (result.isRejected()) {
+                            console.log(result.reason());
+                        }
+                        else {
+                            return result.value();
+                        }
+                    });
+                    callback(null, results);
                 });
             }
         }
@@ -497,27 +485,14 @@ var pluginManager = function pluginManager() {
     };
 
     /**
-    * Dispatch specific event on api side and wait until all event handlers have processed the event.
+    * Dispatch specific event on api side and wait until all event handlers have processed the event (legacy)
     * @param {string} event - event to dispatch
     * @param {object} params - object with parameters to pass to event
     * @param {function} callback - function to call, when all event handlers that return Promise finished processing
     * @returns {boolean} true if any one responded to event
     **/
     this.dispatchAllSettled = function(event, params, callback) {
-        return dispatchInternal(event, params, allSettled, callback);
-    };
-
-    /**
-    * Dispatch specific event on api side
-    * @param {string} event - event to dispatch
-    * @param {object} params - object with parameters to pass to event
-    * @param {function} callback - function to call, when all event handlers that return Promise finished processing
-    * @returns {boolean} true if any one responded to event
-    **/
-    this.dispatch = function(event, params, callback) {
-        return dispatchInternal(event, params, function(promises) {
-            return Promise.all(promises);
-        }, callback);
+        return this.dispatch(event, params, callback);
     };
 
     /**
@@ -802,6 +777,7 @@ var pluginManager = function pluginManager() {
     * @returns {void} void
     **/
     this.installPlugin = function(plugin, callback) {
+        var self = this;
         console.log('Installing plugin %j...', plugin);
         callback = callback || function() {};
         var scriptPath = path.join(__dirname, plugin, 'install.js');
@@ -828,14 +804,21 @@ var pluginManager = function pluginManager() {
                 return callback(errors);
             }
             var cwd = eplugin ? eplugin.rfs : path.join(__dirname, plugin);
-            exec('sudo npm install --unsafe-perm', {cwd: cwd}, function(error2) {
-                if (error2) {
-                    errors = true;
-                    console.log('error: %j', error2);
-                }
-                console.log('Done installing plugin %j', plugin);
+            if (!self.getConfig("api").offline_mode) {
+                exec('sudo npm install --unsafe-perm', {cwd: cwd}, function(error2) {
+                    if (error2) {
+                        errors = true;
+                        console.log('error: %j', error2);
+                    }
+                    console.log('Done installing plugin %j', plugin);
+                    callback(errors);
+                });
+            }
+            else {
+                errors = true;
                 callback(errors);
-            });
+                console.log('Server is in offline mode, this command cannot be run. %j');
+            }
         });
     };
 
@@ -846,6 +829,7 @@ var pluginManager = function pluginManager() {
     * @returns {void} void
     **/
     this.upgradePlugin = function(plugin, callback) {
+        var self = this;
         console.log('Upgrading plugin %j...', plugin);
         callback = callback || function() {};
         var scriptPath = path.join(__dirname, plugin, 'install.js');
@@ -872,14 +856,21 @@ var pluginManager = function pluginManager() {
                 return callback(errors);
             }
             var cwd = eplugin ? eplugin.rfs : path.join(__dirname, plugin);
-            exec('sudo npm update --unsafe-perm', {cwd: cwd}, function(error2) {
-                if (error2) {
-                    errors = true;
-                    console.log('error: %j', error2);
-                }
-                console.log('Done upgrading plugin %j', plugin);
+            if (!self.getConfig("api").offline_mode) {
+                exec('sudo npm update --unsafe-perm', {cwd: cwd}, function(error2) {
+                    if (error2) {
+                        errors = true;
+                        console.log('error: %j', error2);
+                    }
+                    console.log('Done upgrading plugin %j', plugin);
+                    callback(errors);
+                });
+            }
+            else {
+                errors = true;
                 callback(errors);
-            });
+                console.log('Server is in offline mode, this command cannot be run. %j');
+            }
         });
     };
 
@@ -1140,15 +1131,14 @@ var pluginManager = function pluginManager() {
         var dbName;
         var dbOptions = {
             poolSize: maxPoolSize,
-            reconnectInterval: 1000,
-            reconnectTries: 999999999,
-            autoReconnect: true,
             noDelay: true,
             keepAlive: true,
             keepAliveInitialDelay: 30000,
             connectTimeoutMS: 999999999,
             socketTimeoutMS: 999999999,
-            useNewUrlParser: true
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            auto_reconnect: true
         };
         if (typeof config.mongodb === 'string') {
             dbName = this.replaceDatabaseString(config.mongodb, db);

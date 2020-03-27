@@ -819,7 +819,7 @@ var AppRouter = Backbone.Router.extend({
         if (!node.url && category !== "management" && category !== "users") {
             this._subMenus[node.code] = true;
             menu.hide();
-            menu.after('<div class="sidebar-submenu" id="' + node.code + '-submenu">');
+            menu = menu.add('<div class="sidebar-submenu" id="' + node.code + '-submenu">');
         }
         var added = false;
         var selector = "#sidebar-menu #" + app_type + "-type ." + category + "-category";
@@ -1291,11 +1291,11 @@ var AppRouter = Backbone.Router.extend({
             /**
             * Add menus
             **/
-            self.addMenuCategory("understand", {priority: 1});
-            self.addMenuCategory("explore", {priority: 2});
-            self.addMenuCategory("reach", {priority: 3});
-            self.addMenuCategory("improve", {priority: 4});
-            self.addMenuCategory("utilities", {priority: 5});
+            self.addMenuCategory("understand", {priority: 10});
+            self.addMenuCategory("explore", {priority: 20});
+            self.addMenuCategory("reach", {priority: 30});
+            self.addMenuCategory("improve", {priority: 40});
+            self.addMenuCategory("utilities", {priority: 50});
             self.addMenu("understand", {code: "overview", url: "#/", text: "sidebar.dashboard", icon: '<div class="logo dashboard ion-speedometer"></div>', priority: 10});
             self.addMenu("understand", {code: "analytics", text: "sidebar.analytics", icon: '<div class="logo analytics ion-ios-pulse-strong"></div>', priority: 20});
             self.addMenu("understand", {code: "engagement", text: "sidebar.engagement", icon: '<div class="logo ion-happy-outline"></div>', priority: 30});
@@ -1303,7 +1303,7 @@ var AppRouter = Backbone.Router.extend({
             self.addSubMenu("events", {code: "events-overview", url: "#/analytics/events/overview", text: "sidebar.events.overview", priority: 10});
             self.addSubMenu("events", {code: "all-events", url: "#/analytics/events", text: "sidebar.events.all-events", priority: 20});
             if (countlyGlobal.member.global_admin) {
-                self.addSubMenu("events", {code: "all-events", url: "#/analytics/events/blueprint", text: "sidebar.events.blueprint", priority: 100});
+                self.addSubMenu("events", {code: "manage-events", url: "#/analytics/events/blueprint", text: "sidebar.events.blueprint", priority: 100});
             }
             self.addMenu("utilities", {
                 code: "management",
@@ -1329,6 +1329,7 @@ var AppRouter = Backbone.Router.extend({
 
             self.addMenu("explore", {code: "users", text: "sidebar.analytics.users", icon: '<div class="logo ion-person-stalker"></div>', priority: 10});
             self.addMenu("explore", {code: "behavior", text: "sidebar.behavior", icon: '<div class="logo ion-funnel"></div>', priority: 20});
+            Backbone.history.checkUrl();
         });
 
         this.routesHit = 0; //keep count of number of routes handled by your application
@@ -1358,10 +1359,15 @@ var AppRouter = Backbone.Router.extend({
         Handlebars.registerHelper('clearObjectId', function(object) {
             if (object) {
                 var id = object._id;
-                if (id.substr(0, 3) === "Obj") {
-                    id = id.split("(")[1].split(")")[0];
+                if (typeof id === "string") {
+                    if (id.substr(0, 3) === "Obj") {
+                        id = id.split("(")[1].split(")")[0];
+                    }
+                    return id;
                 }
-                return id;
+                else {
+                    return "";
+                }
             }
             else {
                 return '';
@@ -1979,7 +1985,7 @@ var AppRouter = Backbone.Router.extend({
                 });
             });
 
-            $("#save-account-details:not(.disabled)").live('click', function() {
+            $(document).on('click', "#save-account-details:not(.disabled)", function() {
                 var username = $(".dialog #username").val(),
                     old_pwd = $(".dialog #old_pwd").val(),
                     new_pwd = $(".dialog #new_pwd").val(),
@@ -3685,6 +3691,8 @@ var AppRouter = Backbone.Router.extend({
                 e.stopPropagation();
             });
 
+            var dateTo;
+            var dateFrom;
             $("#date-picker-button").click(function(e) {
                 $("#date-picker").toggle();
                 $("#date-picker-button").toggleClass("active");
@@ -3698,7 +3706,7 @@ var AppRouter = Backbone.Router.extend({
                     date = new Date();
                     date.setHours(0, 0, 0, 0);
                     self.dateToSelected = date.getTime();
-                    dateTo.datepicker("setDate", date);
+                    dateTo.datepicker("setDate", new Date(self.dateToSelected));
                     dateFrom.datepicker("option", "maxDate", new Date(self.dateToSelected));
                 }
 
@@ -3708,7 +3716,7 @@ var AppRouter = Backbone.Router.extend({
                     dateTo.datepicker("option", "minDate", date);
                 }
                 else {
-                    var extendDate = moment(dateTo.datepicker("getDate")).subtract(30, 'days').toDate();
+                    var extendDate = moment(dateTo.datepicker("getDate"), "MM-DD-YYYY").subtract(30, 'days').toDate();
                     extendDate.setHours(0, 0, 0, 0);
                     dateFrom.datepicker("setDate", extendDate);
                     self.dateFromSelected = extendDate.getTime();
@@ -3724,7 +3732,7 @@ var AppRouter = Backbone.Router.extend({
                 e.stopPropagation();
             });
 
-            var dateTo = $("#date-to").datepicker({
+            dateTo = $("#date-to").datepicker({
                 numberOfMonths: 1,
                 showOtherMonths: true,
                 maxDate: moment().toDate(),
@@ -3750,7 +3758,7 @@ var AppRouter = Backbone.Router.extend({
                 }
             });
 
-            var dateFrom = $("#date-from").datepicker({
+            dateFrom = $("#date-from").datepicker({
                 numberOfMonths: 1,
                 showOtherMonths: true,
                 maxDate: moment().subtract(1, 'days').toDate(),
@@ -4041,6 +4049,29 @@ Backbone.history.checkUrl = function() {
         }
     }
 };
+
+var checkGlovbalAdminOnlyPermission = function() {
+    var checkList = [
+        "/manage/users",
+        "/manage/apps",
+    ];
+
+    var existed = false;
+    checkList.forEach(function(item) {
+        if (Backbone.history.getFragment().indexOf(item) > -1) {
+            existed = true;
+        }
+    });
+
+    if (countlyGlobal.member.global_admin !== true && existed === true) {
+
+        window.location.hash = "/";
+        return false;
+    }
+    return true;
+};
+Backbone.history.urlChecks.push(checkGlovbalAdminOnlyPermission);
+
 
 //initial hash check
 (function() {
