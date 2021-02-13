@@ -1,4 +1,4 @@
-/* global countlyCommon, countlyLocation, CountlyHelpers, countlySession, google, _, countlyGlobal, Backbone, jQuery, $*/
+/* global countlyCommon, countlyLocation, CountlyHelpers, countlySession, google, _, countlyGlobal, Backbone, jQuery, $, T*/
 (function() {
 
     // Private Properties
@@ -18,11 +18,11 @@
         _countryMap = {};
 
     // Load local country names
-    $.get('localization/countries/' + countlyCommon.BROWSER_LANG_SHORT + '/country.json', function(data) {
+    T.get('/localization/countries/' + countlyCommon.BROWSER_LANG_SHORT + '/country.json', function(data) {
         _countryMap = data;
     });
 
-    $.get('localization/countries/en/region.json', function(data) {
+    T.get('/localization/countries/en/region.json', function(data) {
         _regionMap = data;
     });
 
@@ -54,8 +54,8 @@
 
     CountlyHelpers.createMetricModel(window.countlyLocation, {name: "countries", estOverrideMetric: "countries"}, jQuery, countlyLocation.getCountryName);
 
-    countlyLocation.getRegionName = function(rgn) {
-        return _regionMap[rgn];
+    countlyLocation.getRegionName = function(rgn, country) {
+        return _regionMap[rgn] || _regionMap[country + "-" + rgn] || rgn;
     };
 
     // Public Methods
@@ -174,7 +174,7 @@
 
     countlyLocation.changeLanguage = function() {
         // Load local country names
-        return $.get('localization/countries/' + countlyCommon.BROWSER_LANG_SHORT + '/country.json', function(data) {
+        return T.get('/localization/countries/' + countlyCommon.BROWSER_LANG_SHORT + '/country.json', function(data) {
             _countryMap = data;
         });
     };
@@ -193,7 +193,7 @@
             {
                 "name": "country",
                 "func": function(rangeArr) {
-                    return countlyLocation.getCountryName(rangeArr);
+                    return rangeArr;
                 }
             },
             { "name": "t" },
@@ -219,7 +219,8 @@
             }
             return {
                 c: [
-                    {v: value.country},
+                    //v - value, f - formatted value
+                    {v: value.country, f: countlyLocation.getCountryName(value.country)},
                     {v: value[ob.metric] === 0 ? null : value[ob.metric]}
                 ]
             };
@@ -272,7 +273,7 @@
             {
                 "name": "country",
                 "func": function(rangeArr) {
-                    return countlyLocation.getCountryName(rangeArr);
+                    return rangeArr;
                 }
             },
             { "name": "t" },
@@ -298,7 +299,8 @@
             }
             return {
                 c: [
-                    {v: value.country},
+                    //v - value, f - formatted value
+                    {v: value.country, f: countlyLocation.getCountryName(value.country)},
                     {v: value[ob.metric]}
                 ]
             };

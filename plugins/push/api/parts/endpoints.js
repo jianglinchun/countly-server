@@ -24,7 +24,7 @@ function catchy(f) {
     return (...args) => {
         try {
             let res = f.apply(this, args);
-            if (res && res.resolve && res.reject) {
+            if (res && res.then) {
                 res.catch(e => {
                     log.e('Rejection %j', e);
                     if (args[0].res && !args[0].res.finished) {
@@ -49,7 +49,7 @@ function catchy(f) {
  * @return {Object}      data to cache
  */
 function cachedData(note) {
-    return {_id: note._id.toString(), apps: note.apps.map(id => id.toString()), autoEvents: note.autoEvents, autoCohorts: note.autoCohorts, actualDates: note.actualDates};
+    return {_id: note._id.toString(), apps: note.apps.map(id => id.toString()), tx: note.tx, relativeExpiration: note.relativeExpiration, auto: note.auto, autoEvents: note.autoEvents, autoCohorts: note.autoCohorts, actualDates: note.actualDates};
 }
 
 (function(/*api*/) {
@@ -89,8 +89,12 @@ function cachedData(note) {
             suf = '_' + crypto.createHash('md5').update('true').digest('base64')[0],
             ids = mts.map((m, i) => 'no-segment_' + (agm + i >= 12 ? noy : agy) + ':' + m)
                 .concat([
-                    'a_' + noy + ':' + (nom + 1) + suf, // '_a' is from crypto.createHash('md5').update('false').digest('base64')[0]
+                    'a_' + noy + ':' + (nom + 1) + suf, // '_s' is from crypto.createHash('md5').update('false').digest('base64')[0]
                     'a_' + (nom === 0 ? agy : noy) + ':' + (nom === 0 ? 12 : nom) + suf
+                ])
+                .concat([
+                    't_' + noy + ':' + (nom + 1) + suf, // '_s' is from crypto.createHash('md5').update('false').digest('base64')[0]
+                    't_' + (nom === 0 ? agy : noy) + ':' + (nom === 0 ? 12 : nom) + suf
                 ]),
             // mts.reduce((acc, m, i) => {
             //     acc.push('no-segment_' + (agm + i >= 12 ? noy : agy) + ':' + m);
@@ -132,7 +136,7 @@ function cachedData(note) {
             common.dbPromise(sen, 'find', que),
             common.dbPromise(act, 'find', que),
             common.dbPromise(app, 'count', qtk),
-            common.dbPromise(app, 'count'),
+            common.dbPromise(app, 'estimatedDocumentCount'),
             getCohortsPluginApi() ? common.dbPromise('cohorts', 'find', qqh) : Promise.resolve(),
             getGeoPluginApi() ? common.dbPromise(geo, 'find', qge) : Promise.resolve(),
             getGeoPluginApi() ? new Promise((resolve) => resolve(geoip.lookup(params.ip_address))) : Promise.resolve()
@@ -141,6 +145,7 @@ function cachedData(note) {
                 var events = results.slice(0, 2).map(events1 => {
                     var ret = {weekly: {data: Array(wks.length).fill(0), keys: wkt}, monthly: {data: Array(mts.length).fill(0), keys: mtt}, total: 0};
                     var retAuto = { daily: { data: Array(30).fill(0), keys: Array(30).fill(0).map((x, k) => k)}, total: 0 };
+                    var retTx = { daily: { data: Array(30).fill(0), keys: Array(30).fill(0).map((x, k) => k)}, total: 0 };
                     // log.d('events', events);
                     events1.forEach(e => {
                         // log.d('event', e);
@@ -160,7 +165,8 @@ function cachedData(note) {
                             // current week & month numbers are first and last in wks / mts arrays
                             var we = moment(new Date(yer, mon, d)).isoWeek(),
                                 wi = wks[yer === agy ? 'indexOf' : 'lastIndexOf'](we),
-                                mi = mts[yer === agy ? 'indexOf' : 'lastIndexOf'](mon + 1);
+                                mi = mts[yer === agy ? 'indexOf' : 'lastIndexOf'](mon + 1),
+                                date, diff, target;
 
                             if (e.s === 'no-segment') {
                                 // log.d('%s / %d: %d', e.s, d, e.d[d].c);
@@ -170,13 +176,28 @@ function cachedData(note) {
                             }
                             else if (e.s === 'a' && 'true' in e.d[d]) {
                                 // log.d('%s / %d: %d', e.s, d, e.d[d]['true'].c);
-                                var date = moment({ year: yer, month: mon, day: d});
-                                var diff = moment().diff(date, 'days');
+                                date = moment({ year: yer, month: mon, day: d});
+                                diff = moment().diff(date, 'days');
 
                                 if (diff <= 29) {
-                                    var target = 29 - diff;
+                                    target = 29 - diff;
                                     retAuto.daily.data[target] += e.d[d].true.c;
                                     retAuto.total += e.d[d].true.c;
+                                }
+
+                                ret.weekly.data[wi] -= e.d[d].true.c;
+                                ret.monthly.data[mi] -= e.d[d].true.c;
+                                ret.total -= e.d[d].true.c;
+                            }
+                            else if (e.s === 't' && 'true' in e.d[d]) {
+                                // log.d('%s / %d: %d', e.s, d, e.d[d]['true'].c);
+                                date = moment({ year: yer, month: mon, day: d});
+                                diff = moment().diff(date, 'days');
+
+                                if (diff <= 29) {
+                                    target = 29 - diff;
+                                    retTx.daily.data[target] += e.d[d].true.c;
+                                    retTx.total += e.d[d].true.c;
                                 }
 
                                 ret.weekly.data[wi] -= e.d[d].true.c;
@@ -188,15 +209,18 @@ function cachedData(note) {
 
                     return {
                         m: ret,
-                        a: retAuto
+                        a: retAuto,
+                        t: retTx
                     };
                 });
 
                 common.returnOutput(params, {
                     sent: events[0].m,
                     sent_automated: events[0].a,
+                    sent_tx: events[0].t,
                     actions: events[1].m,
                     actions_automated: events[1].a,
+                    actions_tx: events[1].t,
                     enabled: results[2] || 0,
                     users: results[3] ? results[3] : 0,
                     cohorts: results[4] || [],
@@ -367,7 +391,9 @@ function cachedData(note) {
                 'autoTime': { 'required': false, 'type': 'Number' },
                 'autoCapMessages': { 'required': false, 'type': 'Number' },
                 'autoCapSleep': { 'required': false, 'type': 'Number' },
+                'autoCancelTrigger': { 'required': false, 'type': 'Boolean' },
                 'actualDates': { 'required': false, 'type': 'Boolean' },
+                'expiration': { 'required': false, 'type': 'Number' },
             },
             data = common.validateArgs(params.qstring.args, argProps, true);
 
@@ -400,7 +426,7 @@ function cachedData(note) {
             }
 
             if (!data.platforms || data.platforms.filter(x => Object.values(N.Platform).indexOf(x) === -1).length) {
-                return [{error: `Bad message plaform: only ${N.Platform.IOS} (IOS) & ${N.Platform.ANDROID} (ANDROID) are supported`}];
+                return [{error: `Bad message plaform: only ${N.Platform.IOS} (IOS), ${N.Platform.ANDROID} (ANDROID) & ${N.Platform.HUAWEI} (HUAWEI) are supported`}];
             }
 
             if (data.type === 'data') {
@@ -444,14 +470,6 @@ function cachedData(note) {
             data.messagePerLocale = mpl;
         }
 
-        if (data.tx && (params.qstring.args.date || params.qstring.args.expiryDate)) {
-            return [{error: 'Tx messages cannot have date / expiryDate'}];
-        }
-
-        if (data.auto && params.qstring.args.expiryDate) {
-            return [{error: 'Auto messages cannot have expiryDate'}];
-        }
-
         if (!data.auto && params.qstring.args.autoEnd) {
             return [{error: 'Non-auto messages cannot have end date'}];
         }
@@ -461,9 +479,6 @@ function cachedData(note) {
         }
         if (api.setDateParam(params, 'autoEnd', data)) {
             return [{error: 'Only long (ms since Epoch) is supported as autoEnd format'}];
-        }
-        if (api.setDateParam(params, 'expiryDate', data)) {
-            return [{error: 'Only long (ms since Epoch) is supported as expiryDate format'}];
         }
 
         if (typeof params.qstring.args.tz === 'undefined' || params.qstring.args.tz === false) {
@@ -498,6 +513,12 @@ function cachedData(note) {
             else {
                 return [{error: 'No such message'}];
             }
+        }
+
+        if (data.platforms.indexOf(N.Platform.ANDROID) !== 1 &&
+            data.platforms.indexOf(N.Platform.HUAWEI) === -1 &&
+            apps.filter(a => common.dot(a, `plugins.push.${N.Platform.HUAWEI}._id`)).length) {
+            data.platforms.push(N.Platform.HUAWEI);
         }
 
         if (!skipAppsPlatforms && apps.length !== data.apps.length) {
@@ -600,11 +621,12 @@ function cachedData(note) {
             delayed: data.delayed,
             test: data.test || false,
             date: data.date || new Date(),
-            expiryDate: data.expiryDate,
+            expiration: data.expiration,
             tz: data.tz,
             tx: data.tx || false,
             auto: data.auto || false,
             autoOnEntry: data.auto ? data.autoOnEntry : undefined,
+            autoCancelTrigger: data.auto ? data.autoCancelTrigger : undefined,
             autoCohorts: data.auto && autoCohorts && autoCohorts.length ? autoCohorts.map(c => c._id) : undefined,
             autoEvents: data.auto && data.autoEvents && data.autoEvents.length && data.autoEvents || undefined,
             autoEnd: data.auto ? data.autoEnd : undefined,
@@ -626,7 +648,27 @@ function cachedData(note) {
              */
             ret = (data) => {
                 return dontReturn ? data : common.returnOutput(params, data);
-            };
+            },
+            /**
+             * run simple count on app_users:
+             * - no accurate build needed (auto, tx & build later cases)
+             * - build timeout (return app_users count if aggregation is too slow)
+             */
+            countLocales = () => {
+                if (!params.res.finished) {
+                    sg.count(note, apps, true).then(([fields]) => {
+                        if (!params.res.finished) {
+                            let total = Object.values(fields).reduce((a, b) => a + b, 0);
+                            log.i('Returning fast queried audience for %s: %j', note._id, total);
+                            note.build = {total: total};
+                            ret(note);
+                        }
+                    }, err => {
+                        ret({error: err});
+                    });
+                }
+            },
+            sg = new S.StoreGroup(common.db);
 
         if (note.error) {
             return ret(note);
@@ -635,45 +677,28 @@ function cachedData(note) {
             return ret({error: 'Already created'});
         }
         else if (prepared) {
-            return ret(prepared);
+            if (prepared.doesntPrepare) {
+                note = prepared;
+                return countLocales();
+            }
+            else {
+                return ret(prepared);
+            }
         }
 
         note._id = new common.db.ObjectID();
 
-        if (note.tx) {
-            return ret({error: 'Tx messages shall not be prepared'});
-        }
-        else {
-            note.result.status = N.Status.NotCreated;
-        }
+        // if (note.tx) {
+        //     return ret({error: 'Tx messages shall not be prepared'});
+        // }
+        // else {
+        note.result.status = N.Status.NotCreated;
+        // }
 
         log.i('Saving message to prepare %j', note._id);
         log.d('message data %j', note);
 
         await note.insert(common.db);
-
-        let sg = new S.StoreGroup(common.db);
-
-        // 
-        /**
-         * run simple count on app_users:
-         * - no accurate build needed (auto, tx & build later cases)
-         * - build timeout (return app_users count if aggregation is too slow)
-         */
-        let countLocales = () => {
-            if (!params.res.finished) {
-                sg.count(note, apps, true).then(([fields]) => {
-                    if (!params.res.finished) {
-                        let total = Object.values(fields).reduce((a, b) => a + b, 0);
-                        log.i('Returning fast queried audience for %s: %j', note._id, total);
-                        note.build = {total: total};
-                        ret(note);
-                    }
-                }, err => {
-                    ret({error: err});
-                });
-            }
-        };
 
         if (note.doesntPrepare) {
             return countLocales();
@@ -733,7 +758,7 @@ function cachedData(note) {
         if (note.tx) {
             log.i('Won\'t prepare tx message %j', note);
         }
-        else if (!prepared && !params.qstring.args.demo) {
+        else if (!prepared && (!params.qstring.args || !params.qstring.args.demo)) {
             log.i('No prepared message, preparing');
             let tmp = await api.prepare(params, true);
             log.i('Prepared %j', tmp);
@@ -792,6 +817,7 @@ function cachedData(note) {
             apps.forEach(app => {
                 common.db.collection('apps').updateOne({_id: app._id, 'plugins.push.i._id': {$exists: false}}, {$set: {'plugins.push.i._id': 'demo'}}, () => {});
                 common.db.collection('apps').updateOne({_id: app._id, 'plugins.push.a._id': {$exists: false}}, {$set: {'plugins.push.a._id': 'demo'}}, () => {});
+                common.db.collection('apps').updateOne({_id: app._id, 'plugins.push.h._id': {$exists: false}}, {$set: {'plugins.push.h._id': 'demo'}}, () => {});
             });
 
             if (json.auto) {
@@ -909,7 +935,7 @@ function cachedData(note) {
             common.returnOutput(params, json);
         }
         else {
-            if (!prepared || (!note.delayed && !prepared.build.total)) {
+            if (!note.delayed && (!prepared || !prepared.build || !prepared.build.total)) {
                 return common.returnOutput(params, {error: 'No audience'});
             }
 
@@ -1087,14 +1113,15 @@ function cachedData(note) {
             query.source = params.qstring.source;
         }
 
-        if (params.qstring.auto === 'true') {
-            query.auto = true;
-        }
-        else if (params.qstring.tx === 'true') {
+        if (params.qstring.tx === 'true') {
             query.tx = true;
+        }
+        else if (params.qstring.auto === 'true') {
+            query.auto = true;
         }
         else if (params.qstring.auto === 'false') {
             query.$or = [{auto: {$exists: false}}, {auto: false}];
+            query.tx = false;
         }
 
         log.d('Querying messages: %j', query);
@@ -1204,14 +1231,14 @@ function cachedData(note) {
                 return false;
             }
 
-            if (!message.auto) {
-                return common.returnMessage(params, 404, 'Message is not automated');
+            if (!message.auto && !message.tx) {
+                return common.returnMessage(params, 404, 'Message is neither automated or tx');
             }
 
-            let preload = message.autoOnEntry === 'events' ? Promise.resolve([]) : new Promise((res, rej) => common.db.collection('cohorts').find({_id: {$in: message.autoCohorts}}).toArray((err3, cohorts) => err3 ? rej(err3) : res(cohorts)));
+            let preload = message.tx || message.autoOnEntry === 'events' ? Promise.resolve([]) : new Promise((res, rej) => common.db.collection('cohorts').find({_id: {$in: message.autoCohorts}}).toArray((err3, cohorts) => err3 ? rej(err3) : res(cohorts)));
 
             preload.then(cohorts => {
-                if (message.autoOnEntry !== 'events') {
+                if (message.auto && message.autoOnEntry !== 'events') {
                     if (cohorts.length !== message.autoCohorts.length) {
                         return common.returnOutput(params, {error: 'Some of message cohorts have been deleted'});
                     }
@@ -1285,7 +1312,7 @@ function cachedData(note) {
                 update.$set = Object.assign(update.$set || {}, {['plugins.push.' + N.Platform.IOS]: {}});
                 credsToRemove.push(common.db.ObjectID(common.dot(app, `plugins.push.${N.Platform.IOS}._id`)));
             }
-            else if (!common.equal(config[N.Platform.IOS], app.plugins && app.plugins.push && app.plugins.push[N.Platform.IOS], true)) {
+            else if (!common.equal(config[N.Platform.IOS], app.plugins && app.plugins.push && app.plugins.push[N.Platform.IOS], true) && config[N.Platform.IOS] && config[N.Platform.IOS].file) {
                 let data = config[N.Platform.IOS],
                     mime = data.file.indexOf(';base64,') === -1 ? null : data.file.substring(0, data.file.indexOf(';base64,')),
                     detected;
@@ -1314,15 +1341,25 @@ function cachedData(note) {
                     data.type = detected;
                 }
 
-                let id = new common.db.ObjectID();
-                credsToCheck.push(common.dbPromise('credentials', 'insertOne', {
-                    _id: id,
-                    type: data.type,
-                    platform: N.Platform.IOS,
-                    key: data.file.substring(data.file.indexOf(',') + 1),
-                    secret: data.type === C.CRED_TYPE[N.Platform.IOS].UNIVERSAL ? data.pass : [data.key, data.team, data.bundle].join('[CLY]')
+                let id = new common.db.ObjectID(),
+                    oldid = common.dot(app, `plugins.push.${N.Platform.IOS}._id`);
+
+                oldid = oldid && common.db.ObjectID(oldid);
+                if (oldid) {
+                    credsToRemove.push(oldid);
+                }
+
+                const key = data.file.substring(data.file.indexOf(',') + 1);
+                credsToCheck.push((oldid ? common.dbPromise('credentials', 'findOne', oldid).then(cr => cr && cr.seq || 0) : Promise.resolve(0)).then(seq => {
+                    return common.dbPromise('credentials', 'insertOne', {
+                        _id: id,
+                        type: data.type,
+                        platform: N.Platform.IOS,
+                        key: key,
+                        secret: data.type === C.CRED_TYPE[N.Platform.IOS].UNIVERSAL ? data.pass : [data.key, data.team, data.bundle].join('[CLY]'),
+                        seq: seq && seq + 1000000 || 0
+                    });
                 }));
-                credsToRemove.push(common.db.ObjectID(common.dot(app, `plugins.push.${N.Platform.IOS}._id`)));
 
                 data._id = '' + id;
                 log.d('Setting APN config for app %s: %j', app._id, data);
@@ -1337,19 +1374,58 @@ function cachedData(note) {
             }
             else if (!common.equal(config[N.Platform.ANDROID], app.plugins && app.plugins.push && app.plugins.push[N.Platform.ANDROID], true)) {
                 let id = new common.db.ObjectID(),
+                    oldid = common.dot(app, `plugins.push.${N.Platform.ANDROID}._id`),
                     data = config[N.Platform.ANDROID];
 
-                credsToCheck.push(common.dbPromise('credentials', 'insertOne', {
-                    _id: id,
-                    type: data.type,
-                    platform: N.Platform.ANDROID,
-                    key: data.key
+                oldid = oldid && common.db.ObjectID(oldid);
+                if (oldid) {
+                    credsToRemove.push(oldid);
+                }
+
+                credsToCheck.push((oldid ? common.dbPromise('credentials', 'findOne', oldid).then(cr => cr && cr.seq || 0) : Promise.resolve(0)).then(seq => {
+                    return common.dbPromise('credentials', 'insertOne', {
+                        _id: id,
+                        type: data.type,
+                        platform: N.Platform.ANDROID,
+                        key: data.key,
+                        seq: seq && seq + 1000000 || 0
+                    });
                 }));
-                credsToRemove.push(common.db.ObjectID(common.dot(app, `plugins.push.${N.Platform.ANDROID}._id`)));
 
                 data._id = '' + id;
                 log.d('Setting ANDROID config for app %s: %j', app._id, data);
                 update.$set = Object.assign(update.$set || {}, {['plugins.push.' + N.Platform.ANDROID]: data});
+            }
+
+            if (config[N.Platform.HUAWEI] === null) {
+                log.d('Unsetting HUAWEI config for app %s', app._id);
+                update.$set = Object.assign(update.$set || {}, {['plugins.push.' + N.Platform.HUAWEI]: {}});
+                credsToRemove.push(common.db.ObjectID(common.dot(app, `plugins.push.${N.Platform.HUAWEI}._id`)));
+            }
+            else if (!common.equal(config[N.Platform.HUAWEI], app.plugins && app.plugins.push && app.plugins.push[N.Platform.HUAWEI], true)) {
+                let id = new common.db.ObjectID(),
+                    oldid = common.dot(app, `plugins.push.${N.Platform.HUAWEI}._id`),
+                    data = config[N.Platform.HUAWEI];
+
+                oldid = oldid && common.db.ObjectID(oldid);
+                if (oldid) {
+                    credsToRemove.push(oldid);
+                }
+
+                credsToCheck.push((oldid ? common.dbPromise('credentials', 'findOne', oldid).then(cr => cr && cr.seq || 0) : Promise.resolve(0)).then(seq => {
+                    return common.dbPromise('credentials', 'insertOne', {
+                        _id: id,
+                        type: data.type,
+                        platform: N.Platform.HUAWEI,
+                        key: data.key,
+                        secret: data.secret,
+                        seq: seq && seq + 1000000 || 0
+                    });
+                }));
+
+                data._id = '' + id;
+                log.d('Setting HUAWEI config for app %s: %j', app._id, data);
+                update.$set = Object.assign(update.$set || {}, {['plugins.push.' + N.Platform.HUAWEI]: data});
             }
 
             if (config.rate) {
@@ -1466,7 +1542,7 @@ function cachedData(note) {
                     reject(err);
                 }
                 else {
-                    if (common.dot(app, `plugins.push.${N.Platform.IOS}._id`) || common.dot(app, `plugins.push.${N.Platform.ANDROID}._id`)) {
+                    if (common.dot(app, `plugins.push.${N.Platform.IOS}._id`) || common.dot(app, `plugins.push.${N.Platform.ANDROID}._id`) || common.dot(app, `plugins.push.${N.Platform.HUAWEI}._id`)) {
                         let now = new Date(), query = {
                             apps: app._id,
                             auto: true,
@@ -1508,6 +1584,38 @@ function cachedData(note) {
                                 });
                             }
                         });
+
+                        let cancelQuery = Object.assign({}, query, {autoOnEntry: !entered, autoCancelTrigger: true});
+                        common.db.collection('messages').find(cancelQuery).toArray((err2, msgs) => {
+                            if (err2) {
+                                log.e('[auto] Error while loading messages to cancel: %j', err2);
+                                reject(err2);
+                            }
+                            else if (!msgs || !msgs.length) {
+                                log.d('[auto] Won\'t process - no messages to cancel');
+                                resolve(0);
+                            }
+                            else {
+                                Promise.all(msgs.map(async msg => {
+                                    log.d('[auto] Cancelling message %j', msg);
+                                    let sg = new S.StoreGroup(common.db),
+                                        note = new N.Note(msg),
+                                        count = await sg.cancelUids(note, app, uids);
+                                    if (count) {
+                                        await note.update(common.db, {$inc: {'result.total': count}});
+                                    }
+                                    return count;
+                                })).then(results => {
+                                    log.i('[auto] Finished processing cohort %j with results %j', cohort._id, results);
+                                    resolve((results || []).map(r => r.total).reduce((a, b) => a + b, 0));
+                                }, err1 => {
+                                    log.i('[auto] Finished processing cohort %j with error %j / %j', cohort._id, err1, err1.stack);
+                                    reject(err);
+                                });
+                            }
+                        });
+
+
                     }
                     else {
                         log.d('[auto] Won\'t process - no push credentials in app');
@@ -1518,8 +1626,16 @@ function cachedData(note) {
         });
     };
 
-    api.onEvent = function(app_id, uid, key, date, msg) {
-        log.d('[auto] Processing event %j @ %s for user %s', key, new Date(date), uid);
+    api.onEvent = function(app_id, uid, event, date, msg) {
+        let data = {
+            [`[${event.key}]c`]: event.count,
+            [`[${event.key}]s`]: event.sum,
+            [`[${event.key}]d`]: event.duration,
+        };
+        Object.keys(event.segmentation || {}).forEach(k => {
+            data[`[${event.key}]sg_${k}`] = event.segmentation[k];
+        });
+        log.d('[auto] Processing event %j @ %s for user %s', event, new Date(date), uid);
         return new Promise((resolve, reject) => {
             common.db.collection('apps').findOne({_id: typeof app_id === 'string' ? common.db.ObjectID(app_id) : app_id}, (err, app) => {
                 if (err) {
@@ -1527,12 +1643,12 @@ function cachedData(note) {
                     reject(err);
                 }
                 else {
-                    if (common.dot(app, `plugins.push.${N.Platform.IOS}._id`) || common.dot(app, `plugins.push.${N.Platform.ANDROID}._id`)) {
+                    if (common.dot(app, `plugins.push.${N.Platform.IOS}._id`) || common.dot(app, `plugins.push.${N.Platform.ANDROID}._id`) || common.dot(app, `plugins.push.${N.Platform.HUAWEI}._id`)) {
                         log.d('[auto] Processing message %s', msg._id);
                         let sg = new S.StoreGroup(common.db),
                             note = new N.Note(msg);
 
-                        sg.pushUids(note, app, [uid], date || new Date().toString()).then(count => {
+                        sg.pushUids(note, app, [uid], date || new Date().toString(), undefined, data).then(count => {
                             if (count) {
                                 note.update(common.db, {$inc: {'result.total': count.total}});
                                 resolve(count.total || 0);
@@ -1608,24 +1724,77 @@ function cachedData(note) {
      */
     function mimeInfo(url) {
         return new Promise((resolve, reject) => {
-            if (url) {
-                log.d('Retrieving URL', url);
-                var parsed = require('url').parse(url);
+            try {
+                if (url) {
+                    common.db.collection('plugins').findOne({}, (error, configs) => {
+                        if (error || !configs) {
+                            return reject([400, 'No db']);
+                        }
 
-                parsed.method = 'HEAD';
-                log.d('Parsed', parsed);
+                        log.d('Retrieving URL', url);
+                        var parsed = require('url').parse(url);
 
-                let req = require(parsed.protocol === 'http:' ? 'http' : 'https').request(parsed, (res) => {
-                    resolve({status: res.statusCode, headers: res.headers});
-                });
-                req.on('error', (err) => {
-                    log.e('error when HEADing ' + url, err);
-                    reject([400, 'Cannot access URL']);
-                });
-                req.end();
+                        if (configs.push && configs.push.proxyhost) {
+                            let opts = {
+                                host: configs.push.proxyhost,
+                                method: 'CONNECT',
+                                path: parsed.hostname + ':' + (parsed.port ? parsed.port : (parsed.protocol === 'https:' ? 443 : 80))
+                            };
+                            if (configs.push.proxyport) {
+                                opts.port = configs.push.proxyport;
+                            }
+                            if (configs.push.proxyuser) {
+                                opts.headers = {'Proxy-Authorization': 'Basic ' + Buffer.from(configs.push.proxyuser + ':' + configs.push.proxypass).toString('base64')};
+                            }
+                            log.d('Connecting to proxy', opts);
+
+                            require('http').request(opts).on('connect', (res, socket) => {
+                                if (res.statusCode === 200) {
+                                    parsed.method = 'HEAD';
+                                    parsed.agent = false;
+                                    log.d('Parsed proxied', parsed);
+                                    parsed.socket = socket;
+
+                                    let req = require(parsed.protocol === 'http:' ? 'http' : 'https').request(parsed, (res2) => {
+                                        resolve({status: res2.statusCode, headers: res2.headers});
+                                    });
+                                    req.on('error', (err) => {
+                                        log.e('error when HEADing ' + url, err);
+                                        reject([400, 'Cannot access proxied URL']);
+                                    });
+                                    req.end();
+                                }
+                                else {
+                                    log.e('Cannot connect to proxy %j: %j / %j', opts, res.statusCode, res.statusMessage);
+                                    reject([400, 'Cannot access proxy']);
+                                }
+                            }).on('error', (err) => {
+                                reject([400, 'Cannot connect to proxy server']);
+                                log.e('error when CONNECTing %j', opts, err);
+                            }).end();
+                        }
+                        else {
+                            parsed.method = 'HEAD';
+                            log.d('Parsed', parsed);
+
+                            let req = require(parsed.protocol === 'http:' ? 'http' : 'https').request(parsed, (res) => {
+                                resolve({status: res.statusCode, headers: res.headers});
+                            });
+                            req.on('error', (err) => {
+                                log.e('error when HEADing ' + url, err);
+                                reject([400, 'Cannot access URL']);
+                            });
+                            req.end();
+                        }
+                    });
+                }
+                else {
+                    reject([400, 'No url']);
+                }
             }
-            else {
-                reject([400, 'No url']);
+            catch (e) {
+                log.e('error getting mime info ' + url, e);
+                reject([500, 'Cannot load URL']);
             }
         });
     }
@@ -1639,6 +1808,133 @@ function cachedData(note) {
         return true;
     };
 
+    api.huawei = function(params) {
+        log.d('Huawei callback: %s %j %j', params.req.method, params.qstring.length, params.qstring);
+        if (params.qstring && params.qstring.statuses && params.qstring.statuses.length) {
+            let unset = {},
+                decr = {};
+
+            params.qstring.statuses.forEach(s => {
+                let [mid, time] = s.biTag.split('.');
+
+                time = parseInt(time);
+
+                if (!time || isNaN(time)) {
+                    return;
+                }
+
+                if (s.status !== 0 && s.status !== 6 && s.status !== 27) {
+                    if (s.token) {
+                        if (!unset[mid]) {
+                            unset[mid] = [];
+                        }
+                        unset[mid].push(s.token);
+                    }
+                    decr[mid] = (decr[mid] || 0) + 1;
+                }
+            });
+
+            let mids = Object.keys(unset).concat(Object.keys(decr));
+            mids = mids.filter((mid, i) => mids.indexOf(mid) === i).map(mid => {
+                try {
+                    return common.db.ObjectID(mid);
+                }
+                catch (e) {
+                    log.e('Wrong mid from huawei %j: %j', mid, e);
+                    delete unset[mid];
+                    delete decr[mid];
+                }
+            }).filter(x => !!x);
+
+            if (mids.length) {
+                log.d('Processing messages %j', mids);
+                common.db.collection('messages').find({_id: {$in: mids}}).toArray((err, msgs) => {
+                    if (err) {
+                        return log.e('Cannot find apps: %j', err);
+                    }
+                    if (!msgs || !msgs.length) {
+                        return log.w('No such messages: %j', mids);
+                    }
+                    log.d('Found %d messages', msgs.length);
+
+                    let aids = [];
+                    msgs.forEach(m => m.apps.forEach(id => !aids.filter(aid => aid.toString() === id.toString()).length && aids.push(id)));
+
+                    common.db.collection('apps').find({_id: {$in: aids}}).toArray((err3, apps) => {
+                        if (err3) {
+                            return log.e('Cannot find apps: %j', err3);
+                        }
+                        if (!apps || !apps.length) {
+                            return log.w('No such apps: %j', aids);
+                        }
+                        log.d('Found %d apps', apps.length);
+
+                        Object.keys(unset).forEach(mid => {
+                            let m = msgs.filter(x => x._id.toString() === mid)[0];
+                            if (!m) {
+                                return log.w('Message not found: %j', mid);
+                            }
+                            m.apps.forEach(aid => {
+                                let app = apps.filter(a => a._id.toString() === aid.toString())[0];
+                                if (!m) {
+                                    return log.w('App not found: %j', mid);
+                                }
+
+                                let cid = common.dot(app, `plugins.push.${N.Platform.HUAWEI}._id`);
+                                if (cid) {
+                                    let field = 'tk.' + (m.test ? 'ht' : 'hp');
+                                    common.db.collection(`push_${aid.toString()}`).updateMany({[field]: {$in: unset[mid]}}, {$unset: {[field]: 1}}, (err2, res) => {
+                                        if (err2) {
+                                            return log.e('Cannot unset tokens: %j', err2);
+                                        }
+                                        log.i('Unset %d tokens out of %d for app %s / message %s', res && res.modifiedCount, unset[mid].length, aid, mid);
+                                    });
+                                }
+                            });
+                        });
+
+                        Object.keys(decr).forEach(mid => {
+                            let m = msgs.filter(x => x._id.toString() === mid)[0];
+                            if (!m) {
+                                return log.w('Message not found: %j', mid);
+                            }
+
+                            m.apps.forEach(aid => {
+                                let app = apps.filter(a => a._id.toString() === aid.toString())[0];
+                                if (!m) {
+                                    return log.w('App not found: %j', mid);
+                                }
+
+                                let cid = common.dot(app, `plugins.push.${N.Platform.HUAWEI}._id`);
+                                if (cid) {
+                                    let field = 'tk.' + (m.test ? 'ht' : 'hp'),
+                                        loader = new S.Loader({_id: cid}, field, common.db, {_id: aid});
+
+                                    loader.recordSentEvent(m, -decr[mid]);
+
+                                    common.db.collection('messages').updateOne({_id: m._id}, {$inc: {'result.sent': -decr[mid]}}, (err2, res) => {
+                                        if (err2) {
+                                            return log.e('Cannot $inc message: %j', err2);
+                                        }
+                                        log.i('decremented %s message %s by %d', res && res.modifiedCount ? '' : 'Not ', mid, decr[mid]);
+                                    });
+                                }
+                            });
+
+
+                        });
+                    });
+                });
+            }
+
+        }
+        else {
+            log.w('Nothing to process in huawei callback: %j', params.qstring);
+        }
+        common.returnOutput(params, {});
+        return true;
+    };
+
     api.processTokenSession = function(dbAppUser, params) {
         var token, field, bool;
         if (typeof params.qstring.ios_token !== 'undefined' && typeof params.qstring.test_mode !== 'undefined') {
@@ -1648,8 +1944,14 @@ function cachedData(note) {
         }
         else if (typeof params.qstring.android_token !== 'undefined' && typeof params.qstring.test_mode !== 'undefined') {
             token = params.qstring.android_token;
-            field = common.dbUserMap.tokens + '.' + common.dbUserMap['gcm_' + params.qstring.test_mode];
-            bool = common.dbUserMap.tokens + common.dbUserMap['gcm_' + params.qstring.test_mode];
+            if (!params.qstring.token_provider || params.qstring.token_provider === 'FCM') {
+                field = common.dbUserMap.tokens + '.' + common.dbUserMap['gcm_' + params.qstring.test_mode];
+                bool = common.dbUserMap.tokens + common.dbUserMap['gcm_' + params.qstring.test_mode];
+            }
+            else {
+                field = common.dbUserMap.tokens + '.' + common.dbUserMap['hms_' + params.qstring.test_mode];
+                bool = common.dbUserMap.tokens + common.dbUserMap['hms_' + params.qstring.test_mode];
+            }
         }
 
         if (token === 'BLACKLISTED') {

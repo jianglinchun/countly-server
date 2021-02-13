@@ -1,19 +1,14 @@
-/*global countlyView,countlyDeviceDetails,countlyAppUsers,countlyDevice,$,countlyConsentManager,countlyGlobal,countlyCommon,moment,CountlyHelpers,jQuery,app,ConsentManagementView,Handlebars,Backbone,countlyUserdata */
+/*global countlyView,countlyDeviceDetails,countlyAppUsers,countlyDevice,$,countlyConsentManager,countlyGlobal,countlyCommon,moment,CountlyHelpers,jQuery,app,ConsentManagementView,T,Backbone,countlyUserdata */
 window.ConsentManagementView = countlyView.extend({
     curSegment: "",
     initialize: function() {},
     beforeRender: function() {
-        if (this.template) {
-            return $.when(countlyConsentManager.initialize()).then(function() {});
-        }
-        else {
-            var self = this;
-            return $.when(
-                $.get(countlyGlobal.path + '/compliance-hub/templates/compliance.html', function(src) {
-                    self.template = Handlebars.compile(src);
-                }),
-                countlyConsentManager.initialize()).then(function() {});
-        }
+        var self = this;
+        return $.when(
+            T.render('/compliance-hub/templates/compliance.html', function(src) {
+                self.template = src;
+            }),
+            countlyConsentManager.initialize()).then(function() {});
     },
     getExportAPI: function(tableID) {
         var requestPath, apiQueryData;
@@ -246,10 +241,10 @@ window.ConsentManagementView = countlyView.extend({
                     {
                         "mData": function(row, type) {
                             if (type === "display") {
-                                return countlyCommon.formatTimeAgo(row.ls || 0) + '<a class="cly-list-options" style="float:right; margin-right:2px;"></a>';
+                                return countlyCommon.formatTimeAgo(row.lac || 0) + '<a class="cly-list-options" style="float:right; margin-right:2px;"></a>';
                             }
                             else {
-                                return row.ls || 0;
+                                return row.lac || 0;
                             }
                         },
                         "sType": "format-ago",
@@ -670,14 +665,17 @@ app.addPageScript("/users/#", function() {
         $("#usertab-consent").append("<div class='widget-header'><div class='left'><div class='title'>" + jQuery.i18n.map["userdata.consents"] + "</div></div></div><table id='d-table-consents' class='d-table sortable help-zone-vb' cellpadding='0' cellspacing='0' data-view='consentManagementView'></table>");
 
         app.activeView.shouldLoadConsents = false;
-        app.activeView.tabs.on("tabsshow", function(event, ui) {
-            if (ui && ui.panel) {
-                var tab = ($(ui.panel).attr("id") + "").replace("usertab-", "");
-                if (tab === "consent" && !app.activeView.shouldLoadConsents) {
-                    app.activeView.shouldLoadConsents = true;
-                    if (app.activeView.dtableconsents) {
-                        app.activeView.dtableconsents.fnDraw(false);
+        app.activeView.tabs.on("tabsactivate", function(event, ui) {
+            if (ui && ui.newPanel) {
+                var tab = ($(ui.newPanel).attr("id") + "").replace("usertab-", "");
+                if (tab === "consent") {
+                    if (!app.activeView.shouldLoadConsents) {
+                        app.activeView.shouldLoadConsents = true;
+                        if (app.activeView.dtableconsents) {
+                            app.activeView.dtableconsents.fnDraw(false);
+                        }
                     }
+                    app.activeView.dtableconsents.stickyTableHeaders();
                 }
             }
         });

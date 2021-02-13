@@ -27,8 +27,8 @@ var exported = {},
             return common.returnMessage(params, 400, 'Missing parameter: events');
         }
 
-        if (params.qstring.events.length > 10) {
-            return common.returnMessage(params, 400, 'Maximum length for parameter events is 10');
+        if (params.qstring.events.length > 20) {
+            return common.returnMessage(params, 400, 'Maximum length for parameter events is 20');
         }
 
         ob.validateUserForDataReadAPI(params, function() {
@@ -37,7 +37,7 @@ var exported = {},
 
             for (var i = 0; i < eventKeysArr.length; i++) {
                 collectionNames.push(
-                    "events" + crypto.createHash('sha1').update(eventKeysArr[i] + params.app_id).digest('hex')
+                    (eventKeysArr[i].startsWith('[CLY]_group_')) ? eventKeysArr[i] : "events" + crypto.createHash('sha1').update(eventKeysArr[i] + params.app_id).digest('hex')
                 );
             }
 
@@ -58,9 +58,16 @@ var exported = {},
         * @param {function} callback - callback method
         **/
         function getEventData(collectionName, callback) {
-            fetch.getTimeObjForEvents(collectionName, params, function(output) {
-                callback(null, output || {});
-            });
+            if (collectionName.startsWith('[CLY]_group_')) {
+                fetch.getMergedEventGroups(params, collectionName, {}, function(output) {
+                    callback(null, output || {});
+                });
+            }
+            else {
+                fetch.getTimeObjForEvents(collectionName, params, function(output) {
+                    callback(null, output || {});
+                });
+            }
         }
 
         return true;
@@ -82,8 +89,8 @@ var exported = {},
             return common.returnMessage(params, 400, 'Missing parameter: apps');
         }
 
-        if (params.qstring.apps.length > 10) {
-            return common.returnMessage(params, 400, 'Maximum length for parameter apps is 10');
+        if (params.qstring.apps.length > 20) {
+            return common.returnMessage(params, 400, 'Maximum length for parameter apps is 20');
         }
 
         var appsToFetch = params.qstring.apps;

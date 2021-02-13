@@ -42,6 +42,11 @@ app.addAppManagementView('push', jQuery.i18n.map['push.plugin-title'], countlyMa
             help: c.a && c.a && c.a.key && c.a.key.length > 50 ? t : '',
             ehelp: c.a && c.a && c.a.key && c.a.key.length < 50 ? t : ''
         };
+        this.templateData.h = {
+            _id: c.h && c.h._id || '',
+            key: c.h && c.h && c.h.key || '',
+            secret: c.h && c.h && c.h.secret || ''
+        };
         this.templateData.rate = {
             rate: c.rate && c.rate.rate || '',
             period: c.rate && c.rate.period || ''
@@ -105,6 +110,16 @@ app.addAppManagementView('push', jQuery.i18n.map['push.plugin-title'], countlyMa
                 }
             }
         }
+
+        if (!t.h.key && t.h.secret) {
+            return jQuery.i18n.map['mgmt-plugins.push.error.h.key'];
+        }
+        if (t.h.key && !t.h.secret) {
+            return jQuery.i18n.map['mgmt-plugins.push.error.h.secret'];
+        }
+        if (t.h.key && (parseInt(t.h.key) + '') !== t.h.key) {
+            return jQuery.i18n.map['mgmt-plugins.push.error.h.keynum'];
+        }
     },
 
     loadFile: function() {
@@ -163,6 +178,9 @@ app.addAppManagementView('push', jQuery.i18n.map['push.plugin-title'], countlyMa
                 data.push.a = null;
             }
 
+            if (!data.push.h.key || !data.push.h.secret) {
+                data.push.h = null;
+            }
 
             return data;
         });
@@ -264,7 +282,7 @@ function modifyUserDetailsForPush() {
                             platforms: platforms,
                             apps: [countlyCommon.ACTIVE_APP_ID],
                             test: test && !prod,
-                            userConditions: {_id: app.userdetailsView.user_id}
+                            userConditions: {did: {$in: [app.userdetailsView.user_did]}}
                         });
                     }
                     else {
@@ -351,4 +369,13 @@ $(document).ready(function() {
             }
         });
     }
+
+    $('body').off('click', '.routename-messagingDashboardView > .tab-buttons > div').on('click', '.routename-messagingDashboardView > .tab-buttons > div', function() {
+        if ($(this).next().length === 1) {
+            $('.widget-content').addClass('hide-zoom');
+        }
+        else {
+            $('.widget-content').removeClass('hide-zoom');
+        }
+    });
 });

@@ -1,4 +1,4 @@
-/*global CountlyHelpers, countlyDashboards, countlyView, _, simpleheat, countlySegmentation, ViewsView, ViewManageView, ViewFrequencyView, ActionMapView, countlyCommon, countlyTokenManager, addDrill, countlyGlobal, countlySession, countlyViews, Handlebars, app, $, jQuery, moment*/
+/*global CountlyHelpers, countlyDashboards, countlyView, _, simpleheat, countlyWidgets, countlySegmentation, ViewsView, ViewManageView, ViewFrequencyView, ActionMapView, countlyCommon, countlyTokenManager, addDrill, countlyGlobal, countlySession, countlyViews, T, app, $, jQuery, moment*/
 
 window.ViewsView = countlyView.extend({
     selectedMetric: "u",
@@ -10,14 +10,15 @@ window.ViewsView = countlyView.extend({
     graphColors: {},
     selectedSegment: {"segmentKey": "", "segmentValue": ""},
     ids: {},
+    viewMap: {},
     lastId: 0,
     token: false,
     useView: null,
     loaded: false,
     beforeRender: function() {
         var self = this;
-        return $.when($.get(countlyGlobal.path + '/views/templates/views.html', function(src) {
-            self.template = Handlebars.compile(src);
+        return $.when(T.render('/views/templates/views.html', function(src) {
+            self.template = src;
         }), countlyViews.initialize()).then(function() {});
     },
     getProperties: function() {
@@ -299,6 +300,7 @@ window.ViewsView = countlyView.extend({
                     }
                     $(nRow).attr("id", self.ids[aData._id]);
                     $(nRow).data("viewid", aData._id);
+                    self.viewMap[aData._id] = aData.display || aData.view || aData._id;
                 },
                 "fnInitComplete": function(oSettings, json) {
                     $.fn.dataTable.defaults.fnInitComplete(oSettings, json);
@@ -395,9 +397,6 @@ window.ViewsView = countlyView.extend({
                     followLink = true;
                 }
 
-                if (countlyGlobal.apps[countlyCommon.ACTIVE_APP_ID].sdk_version && parseInt((countlyGlobal.apps[countlyCommon.ACTIVE_APP_ID].sdk_version + "").split(".")[0]) <= 16) {
-                    return;
-                }
                 $(event.target).toggleClass("active");
                 if ($(event.target).hasClass("active")) {
                     $(".views-table a.table-link").removeClass("active");
@@ -421,7 +420,7 @@ window.ViewsView = countlyView.extend({
                         countlyTokenManager.createToken("View heatmap", "/o/actions", true, countlyCommon.ACTIVE_APP_ID, 1800, function(err, token) {
                             self.token = token && token.result;
                             if (self.token) {
-                                newWindow.name = "cly:" + JSON.stringify({"token": self.token, "purpose": "heatmap", period: countlyCommon.getPeriodForAjax(), showHeatMap: true});
+                                newWindow.name = "cly:" + JSON.stringify({"token": self.token, "purpose": "heatmap", period: countlyCommon.getPeriodForAjax(), showHeatMap: true, app_key: countlyCommon.ACTIVE_APP_KEY});
                                 newWindow.location.href = url;
                             }
                         });
@@ -538,12 +537,18 @@ window.ViewsView = countlyView.extend({
         }
     },
     drawGraph: function() {
-        var props = this.getProperties();
         var dp = [];
         for (var i = 0; i < this.selectedViews.length; i++) {
             var color = countlyCommon.GRAPH_COLORS[i];
-            var data = countlyViews.getChartData(this.selectedViews[i], this.selectedMetric, props[this.selectedMetric], this.selectedSegment.segmentKey, this.selectedSegment.segmentValue).chartDP;
+            var data = countlyViews.getChartData(this.selectedViews[i], this.selectedMetric, this.viewMap[this.selectedViews[i]], this.selectedSegment.segmentKey, this.selectedSegment.segmentValue).chartDP;
             if (data) {
+                for (var index = 0; index < data.length; index++) {
+                    var point = data[index];
+                    if (point && point.label) {
+                        var n = 25;
+                        point.label = point.label.substr(0, n) + '&hellip;';
+                    }
+                }
                 data[1].color = color;
                 $("#" + this.ids[this.selectedViews[i]] + " .color").css("background-color", color);
                 this.graphColors[this.selectedViews[i]] = color;
@@ -589,8 +594,8 @@ window.ViewsView = countlyView.extend({
 window.ViewManageView = countlyView.extend({
     beforeRender: function() {
         var self = this;
-        return $.when($.get(countlyGlobal.path + '/views/templates/manageViews.html', function(src) {
-            self.template = Handlebars.compile(src);
+        return $.when(T.render('/views/templates/manageViews.html', function(src) {
+            self.template = src;
         }), countlyViews.initialize()).then(function() {});
     },
     updatedFields: function() {
@@ -610,6 +615,31 @@ window.ViewManageView = countlyView.extend({
         else {
             $(".apply-view-changes").removeClass("disabled");
         }
+    },
+    getExportAPI: function(tableID) {
+        if (tableID === 'DataTables_Table_0') {
+            var set = this.dtable.fnSettings();
+            var requestPath = countlyCommon.API_PARTS.data.r + "?method=views&action=getTableNames&api_key=" + countlyGlobal.member.api_key + "&app_id=" + countlyCommon.ACTIVE_APP_ID + "&project=true";
+            if (set && set.oPreviousSearch && set.oPreviousSearch.sSearch) {
+                requestPath += "&sSearch=" + set.oPreviousSearch.sSearch;
+            }
+            if (set && set.aaSorting && set.aaSorting[0]) {
+                if (set.aaSorting[0][1] === 'asc' || set.aaSorting[0][1] === 'desc') {
+                    requestPath += "&iSortCol_0=" + set.aaSorting[0][0];
+                    requestPath += "&sSortDir_0=" + set.aaSorting[0][1];
+                }
+            }
+            var apiQueryData = {
+                api_key: countlyGlobal.member.api_key,
+                app_id: countlyCommon.ACTIVE_APP_ID,
+                path: requestPath,
+                method: "GET",
+                filename: "views_naming_on_" + moment().format("DD-MMM-YYYY"),
+                prop: ['aaData']
+            };
+            return apiQueryData;
+        }
+        return null;
     },
     renderCommon: function(isRefresh) {
         var self = this;
@@ -816,8 +846,8 @@ window.ActionMapView = countlyView.extend({
     baseBlur: 1.6,
     beforeRender: function() {
         var self = this;
-        return $.when($.get(countlyGlobal.path + '/views/templates/actionmap.html', function(src) {
-            self.template = Handlebars.compile(src);
+        return $.when(T.render('/views/templates/actionmap.html', function(src) {
+            self.template = src;
         }), countlyViews.loadActionsData(this.view)).then(function() {});
     },
     getData: function(data) {
@@ -1057,7 +1087,9 @@ app.addPageScript("/drill#", function() {
             $.when(countlySegmentation.initialize(currEvent)).then(function() {
                 $("#drill").replaceWith(drillClone.clone(true));
                 self.adjustFilters();
-                self.draw(true, false);
+                if (!self.keepQueryTillExec) {
+                    self.draw(true, false);
+                }
             });
         });
         setTimeout(function() {
@@ -1137,9 +1169,10 @@ $(document).ready(function() {
         app.configurationsView.registerLabel("views", "views.title");
         app.configurationsView.registerLabel("views.view_limit", "views.view-limit");
     }
-
-    initializeViewsWidget();
 });
+
+initializeViewsWidget();
+
 /**
  * Function that initializes widget
  */
@@ -1148,6 +1181,22 @@ function initializeViewsWidget() {
     if (countlyGlobal.plugins.indexOf("dashboards") < 0) {
         return;
     }
+
+    var widgetOptions = {
+        init: initWidgetSections,
+        settings: widgetSettings,
+        placeholder: addPlaceholder,
+        create: createWidgetView,
+        reset: resetWidget,
+        set: setWidget,
+        refresh: refreshWidget
+    };
+
+    if (!app.dashboardsWidgetCallbacks) {
+        app.dashboardsWidgetCallbacks = {};
+    }
+
+    app.dashboardsWidgetCallbacks.views = widgetOptions;
 
     //TO REFRESH VIEWS DATA CHECK FETCH.JS IN API LINE NO: 926
     //SEGMENT THINGY REMAINING
@@ -1165,9 +1214,10 @@ function initializeViewsWidget() {
     /**
      * Function to return view name
      * @param  {String} view - View value
+     * @param  {String} appType - optional. App type. Used to set correct labels for web type
      * @returns {String} name - View name
      */
-    function returnViewName(view) {
+    function returnViewName(view, appType) {
         var name = "Unknown";
 
         var viewName = viewsMetric.filter(function(obj) {
@@ -1176,29 +1226,23 @@ function initializeViewsWidget() {
 
         if (viewName.length) {
             name = viewName[0].name;
+            if (appType === "web" && viewName[0].value === "u") {
+                name = jQuery.i18n.prop("web.common.table.total-users");
+            }
+            if (appType === "web" && viewName[0].value === "n") {
+                name = jQuery.i18n.prop("web.common.table.new-users");
+            }
         }
+
 
         return name;
     }
 
     $.when(
-        $.get(countlyGlobal.path + '/views/templates/widget.html', function(src) {
-            viewsWidgetTemplate = Handlebars.compile(src);
+        T.render('/views/templates/widget.html', function(src) {
+            viewsWidgetTemplate = src;
         })
-    ).then(function() {
-
-        var widgetOptions = {
-            init: initWidgetSections,
-            settings: widgetSettings,
-            placeholder: addPlaceholder,
-            create: createWidgetView,
-            reset: resetWidget,
-            set: setWidget,
-            refresh: refreshWidget
-        };
-
-        app.addWidgetCallbacks("views", widgetOptions);
-    });
+    ).then(function() {});
     /**
      * Function to init widget sections
      */
@@ -1225,6 +1269,22 @@ function initializeViewsWidget() {
         var selectedApp = $singleAppDrop.clySelectGetSelection();
         var selectedViews = $multiViewsDrop.clyMultiSelectGetSelection();
 
+        if (selectedApp) {
+            if (countlyGlobal.apps[selectedApp].type === "web") {
+                $("#multi-views-dropdown").find("div[data-value='u']").html(jQuery.i18n.prop("web.common.table.total-users"));
+                $("#multi-views-dropdown").find("div[data-value='n']").html(jQuery.i18n.prop("web.common.table.new-users"));
+
+                $("#multi-views-dropdown").find(".selection[data-value='u']").html(jQuery.i18n.prop("web.common.table.total-users"));
+                $("#multi-views-dropdown").find(".selection[data-value='n']").html(jQuery.i18n.prop("web.common.table.new-users"));
+
+            }
+            else {
+                $("#multi-views-dropdown").find("div[data-value='u']").html(jQuery.i18n.prop("views.u"));
+                $("#multi-views-dropdown").find("div[data-value='n']").html(jQuery.i18n.prop("views.n"));
+                $("#multi-views-dropdown").find(".selection[data-value='u']").html(jQuery.i18n.prop("views.u"));
+                $("#multi-views-dropdown").find(".selection[data-value='n']").html(jQuery.i18n.prop("views.n"));
+            }
+        }
         var settings = {
             apps: (selectedApp) ? [ selectedApp ] : [],
             views: selectedViews
@@ -1262,8 +1322,10 @@ function initializeViewsWidget() {
             var appName = countlyDashboards.getAppName(app[0]),
                 appId = app[0];
 
+            var periodDesc = countlyWidgets.formatPeriod(widgetData.custom_period);
             var $widget = $(viewsWidgetTemplate({
                 title: title,
+                period: periodDesc.name,
                 app: {
                     id: appId,
                     name: appName
@@ -1277,7 +1339,7 @@ function initializeViewsWidget() {
 
             if (!title) {
                 var widgetTitle = jQuery.i18n.prop("views.heading");
-                placeHolder.find(".title").text(widgetTitle);
+                placeHolder.find(".title .name").text(widgetTitle);
             }
 
             addTooltip(placeHolder);
@@ -1288,6 +1350,13 @@ function initializeViewsWidget() {
      * @param  {Object} widgetData - Widget data object
      */
     function formatData(widgetData) {
+        var appType = "mobile";
+        if (widgetData.apps && widgetData.apps[0]) {
+            if (countlyGlobal.apps[widgetData.apps[0]].type === "web") {
+                appType = "web";
+            }
+
+        }
         var data = widgetData.dashData.data,
             views = widgetData.views;
 
@@ -1296,7 +1365,7 @@ function initializeViewsWidget() {
 
         for (i = 0; i < views.length; i++) {
             viewsValueNames.push({
-                name: returnViewName(views[i]),
+                name: returnViewName(views[i], appType),
                 value: views[i]
             });
         }
@@ -1380,6 +1449,7 @@ function initializeViewsWidget() {
 
         widgetEl.find("table").replaceWith($widget.find("table"));
         addTooltip(widgetEl);
+        countlyWidgets.setPeriod(widgetEl, widgetData.custom_period);
     }
     /**
      * Function to add tooltip
@@ -1403,7 +1473,7 @@ function initializeViewsWidget() {
             interactive: true,
             contentAsHTML: true,
             functionInit: function(instance, helper) {
-                instance.content(getTooltipText($(helper.origin).parents(placeHolder.find("views table tr td:first-child"))));
+                instance.content(getTooltipText($(helper.origin)));
             }
         });
         /**
@@ -1412,7 +1482,7 @@ function initializeViewsWidget() {
          * @returns {String} tooltipStr - Tool tip text string
          */
         function getTooltipText(jqueryEl) {
-            var viewName = jqueryEl.find("td:first-child").data("view-name");
+            var viewName = $(jqueryEl).data("view-name");
             var tooltipStr = "<div id='views-tip'>";
 
             tooltipStr += viewName;

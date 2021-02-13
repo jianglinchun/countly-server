@@ -3,7 +3,8 @@
 
 //https://www.theiphonewiki.com/wiki/Models
 //https://gist.github.com/adamawolf/3048717
-var devices = require("./ios.json");
+//scrape_mac_devices.txt
+var devices = require("./apple.json");
 
 //https://m.media-amazon.com/images/G/01/mobile-apps/dex/firetablets/tablet-device-specs-data._TTH_.json
 //https://developer.amazon.com/docs/fire-tv/device-specifications.html?v=ftveditioninsigniahd
@@ -22,9 +23,14 @@ csv()
         var d = jsonObj["Marketing Name"] + "";
         var i = jsonObj["Model"] + "";
         if (i != d && d.trim().length) {
-            devices[i] = decodeURIComponent(escape(d.replace(/\\x([0-9a-f]{2})/g, function(_, pair) {
-                return String.fromCharCode(parseInt(pair, 16));
-            })));
+            try {
+                devices[i] = decodeURIComponent(escape(d.replace(/\\x([0-9a-f]{2})/g, function(_, pair) {
+                    return String.fromCharCode(parseInt(pair, 16));
+                })));
+            }
+            catch (ex) {
+                devices[i] = d;
+            }
         }
     })
     .on('done', ()=>{

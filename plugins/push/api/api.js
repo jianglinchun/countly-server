@@ -5,6 +5,7 @@
 var plugin = {},
     push = require('./parts/endpoints.js'),
     N = require('./parts/note.js'),
+    C = require('./parts/credentials.js'),
     common = require('../../../api/utils/common.js'),
     log = common.log('push:api'),
     plugins = require('../../pluginManager.js'),
@@ -34,6 +35,7 @@ const PUSH_CACHE_GROUP = 'P';
         for (let k in creds.DB_USER_MAP) {
             common.dbUserMap[k] = creds.DB_USER_MAP[k];
         }
+        common.dbUniqueMap.users.push(creds.DB_MAP['messaging-enabled']);
     }
 
     plugins.register('/worker', function() {
@@ -96,7 +98,8 @@ const PUSH_CACHE_GROUP = 'P';
                                     dur: 0,
                                     sg: {
                                         i: m,
-                                        a: m ? m.auto : undefined
+                                        a: m ? m.auto : undefined,
+                                        t: m ? m.tx : undefined,
                                     },
                                 });
                             });
@@ -115,8 +118,10 @@ const PUSH_CACHE_GROUP = 'P';
                 });
             }
             else if (event === '[CLY]_push_action') {
+                events = events.filter(e => !!e.sg.i);
+
                 let ids = events.map(e => e.sg.i);
-                ids = ids.filter((id, i) => ids.indexOf(id) === i).map(id => common.db.ObjectID(id));
+                ids = ids.filter((id, i) => ids.indexOf(id) === i).map(common.db.ObjectID);
 
                 common.db.collection('messages').find({_id: {$in: ids}}).toArray((err, msgs) => {
                     if (err) {
@@ -133,17 +138,80 @@ const PUSH_CACHE_GROUP = 'P';
         });
     });
 
-    plugins.register('/drill/preprocess_query', ({query}) => {
+    plugins.register('/drill/preprocess_query', ({query, params}) => {
+        if (query.push) {
+            if (query.push.$nin) {
+                query.$and = query.push.$nin.map(tk => {
+                    return {$or: [{[tk]: false}, {[tk]: {$exists: false}}]};
+                });
+            }
+            if (query.push.$in) {
+                let q = query.push.$in.map(tk => {
+                    return {[tk]: true};
+                });
+                query.$or = q;
+            }
+            delete query.push;
+        }
+
         if (query.message) {
-            log.d(`removing message ${query.message} from queryObject`);
+            let mid = query.message.$in || query.message.$nin,
+                not = !!query.message.$nin;
+
+            if (!mid) {
+                return;
+            }
+
+            log.d(`removing message ${JSON.stringify(query.message)} from queryObject`);
             delete query.message;
+
+            if (params && params.qstring.method === 'user_details') {
+                return new Promise((res, rej) => {
+                    try {
+                        mid = mid.map(common.db.ObjectID);
+
+                        let q = {msgs: {$elemMatch: {'0': {$in: mid}}}};
+                        if (not) {
+                            q = {msgs: {$not: q.msgs}};
+                        }
+                        common.db.collection(`push_${params.app_id}`).find(q, {projection: {_id: 1}}).toArray((err, ids) => {
+                            if (err) {
+                                rej(err);
+                            }
+                            else {
+                                ids = (ids || []).map(id => id._id);
+                                query.uid = {$in: ids};
+                                log.d(`filtered by message: uids out of ${ids.length}`);
+                                res();
+                            }
+                        });
+                    }
+                    catch (e) {
+                        console.log(e);
+                        rej(e);
+                    }
+                });
+            }
         }
     });
 
     plugins.register('/drill/postprocess_uids', ({uids, params}) => new Promise((res, rej) => {
-        if (uids.length && params.initialQueryObject && params.initialQueryObject.message) {
+        let message = params.initialQueryObject && params.initialQueryObject.message;
+        if (uids.length && message) {
             log.d(`filtering ${uids.length} uids by message`);
-            return common.db.collection(`push_${params.app_id}`).find({_id: {$in: uids}, msgs: {$elemMatch: {'0': common.db.ObjectID(params.initialQueryObject.message)}}}, {projection: {_id: 1}}).toArray((err, ids) => {
+
+            let q;
+            if (message.$in) {
+                q = {_id: {$in: uids}, msgs: {$elemMatch: {'0': {$in: message.$in.map(common.db.ObjectID)}}}};
+            }
+            else if (message.$nin) {
+                q = {$and: [{_id: {$in: uids}}, {msgs: {$not: {$elemMatch: {'0': {$in: message.$nin.map(common.db.ObjectID)}}}}}]};
+            }
+            else {
+                q = {_id: {$in: uids}, msgs: {$elemMatch: {'0': {$in: message.map(common.db.ObjectID)}}}};
+            }
+
+            return common.db.collection(`push_${params.app_id}`).find(q, {projection: {_id: 1}}).toArray((err, ids) => {
                 if (err) {
                     rej(err);
                 }
@@ -164,7 +232,7 @@ const PUSH_CACHE_GROUP = 'P';
     plugins.register('/cache/init', function() {
         common.cache.init(PUSH_CACHE_GROUP, {
             init: () => new Promise((res, rej) => {
-                common.db.collection('messages').find({auto: true, 'result.status': {$bitsAllSet: N.Status.Scheduled, $bitsAllClear: N.Status.Deleted | N.Status.Aborted}}).toArray((err, arr) => {
+                common.db.collection('messages').find({$or: [{auto: true}, {tx: true}], 'result.status': {$bitsAllSet: N.Status.Scheduled, $bitsAllClear: N.Status.Deleted | N.Status.Aborted}}).toArray((err, arr) => {
                     err ? rej(err) : res(arr.map(m => [m._id.toString(), m]));
                 });
             }),
@@ -296,7 +364,7 @@ const PUSH_CACHE_GROUP = 'P';
                             else {
                                 date = new Date().toString();
                             }
-                            push.onEvent(params.app_id, params.app_user.uid, evs[0], date, note).catch(log.e.bind(log));
+                            push.onEvent(params.app_id, params.app_user.uid, params.qstring.events.filter(e => e.key === evs[0])[0], date, note).catch(log.e.bind(log));
                         }, e => {
                             log.e('Couldn\'t load notification %s', k, e);
                         });
@@ -309,7 +377,7 @@ const PUSH_CACHE_GROUP = 'P';
                 msgIds = pushEvents.map(e => common.db.ObjectID(e.segmentation.i));
             if (msgIds.length) {
                 return new Promise((resolve, reject) => {
-                    common.db.collection('messages').find({_id: {$in: msgIds}}, {auto: 1}).toArray(function(err, msgs) {
+                    common.db.collection('messages').find({_id: {$in: msgIds}}, {auto: 1, tx: 1}).toArray(function(err, msgs) {
                         if (err) {
                             log.e('Error while looking for a message: %j', err);
                             reject(err);
@@ -320,6 +388,7 @@ const PUSH_CACHE_GROUP = 'P';
                                     inc = {};
                                 if (msg) {
                                     event.segmentation.a = msg.auto || false;
+                                    event.segmentation.t = msg.tx || false;
 
                                     if (event.key === '[CLY]_push_open') {
                                         inc['result.delivered'] = event.count;
@@ -386,6 +455,9 @@ const PUSH_CACHE_GROUP = 'P';
         case 'mime':
             validateUserForWriteAPI(push.mimeInfo, params);
             break;
+        case 'huawei':
+            push.huawei(params);
+            break;
         // case 'download':
         //     validateUserForWriteAPI(push.download.bind(push, params, paths[4]), params);
         //     break;
@@ -424,9 +496,9 @@ const PUSH_CACHE_GROUP = 'P';
             var userLastSeenTimestamp = dbAppUser[common.dbUserMap.last_seen],
                 currDate = common.getDate(params.time.timestamp, params.appTimezone),
                 userLastSeenDate = common.getDate(userLastSeenTimestamp, params.appTimezone),
-                secInMin = (60 * (currDate.getMinutes())) + currDate.getSeconds(),
-                secInHour = (60 * 60 * (currDate.getHours())) + secInMin,
-                secInMonth = (60 * 60 * 24 * (currDate.getDate() - 1)) + secInHour,
+                secInMin = (60 * (currDate.minutes())) + currDate.seconds(),
+                secInHour = (60 * 60 * (currDate.hours())) + secInMin,
+                secInMonth = (60 * 60 * 24 * (currDate.date() - 1)) + secInHour,
                 secInYear = (60 * 60 * 24 * (common.getDOY(params.time.timestamp, params.appTimezone) - 1)) + secInHour;
 
             if (userLastSeenTimestamp < (params.time.timestamp - secInMin) && messagingTokenKeys(dbAppUser).length) {
@@ -437,8 +509,8 @@ const PUSH_CACHE_GROUP = 'P';
                 updateUsersMonth['d.' + params.time.day + '.' + common.dbMap['messaging-enabled']] = 1;
             }
 
-            if (userLastSeenDate.getFullYear() === parseInt(params.time.yearly) &&
-                Math.ceil(common.moment(userLastSeenDate).tz(params.appTimezone).format('DDD') / 7) < params.time.weekly && messagingTokenKeys(dbAppUser).length) {
+            if (userLastSeenDate.year() === parseInt(params.time.yearly) &&
+                Math.ceil(userLastSeenDate.format('DDD') / 7) < params.time.weekly && messagingTokenKeys(dbAppUser).length) {
                 updateUsersZero['d.w' + params.time.weekly + '.' + common.dbMap['messaging-enabled']] = 1;
             }
 
@@ -451,10 +523,16 @@ const PUSH_CACHE_GROUP = 'P';
             }
             var postfix = common.crypto.createHash('md5').update(params.qstring.device_id).digest('base64')[0];
             if (Object.keys(updateUsersZero).length) {
+                /* OLD
                 common.db.collection('users').update({'_id': params.app_id + '_' + dbDateIds.zero + '_' + postfix}, {$set: {m: dbDateIds.zero, a: params.app_id + ''}, '$inc': updateUsersZero}, {'upsert': true}, function() {});
+				*/
+                common.writeBatcher.add('users', params.app_id + '_' + dbDateIds.zero + '_' + postfix, {$set: {m: dbDateIds.zero, a: params.app_id + ''}, '$inc': updateUsersZero});
             }
             if (Object.keys(updateUsersMonth).length) {
+                /* OLD
                 common.db.collection('users').update({'_id': params.app_id + '_' + dbDateIds.month + '_' + postfix}, {$set: {m: dbDateIds.month, a: params.app_id + ''}, '$inc': updateUsersMonth}, {'upsert': true}, function() {});
+				*/
+                common.writeBatcher.add('users', params.app_id + '_' + dbDateIds.month + '_' + postfix, {$set: {m: dbDateIds.month, a: params.app_id + ''}, '$inc': updateUsersMonth});
             }
         }
     });
@@ -464,12 +542,10 @@ const PUSH_CACHE_GROUP = 'P';
     plugins.register('/i/apps/reset', function(ob) {
         var appId = ob.appId;
         common.db.collection('messages').remove({'apps': [common.db.ObjectID(appId)]}, function() {});
-        common.db.collection(`push_${appId}`).deleteMany({}, function() {});
-        common.db.collection(`push_${appId}_id`).deleteMany({}, function() {});
-        common.db.collection(`push_${appId}_ia`).deleteMany({}, function() {});
-        common.db.collection(`push_${appId}_ip`).deleteMany({}, function() {});
-        common.db.collection(`push_${appId}_at`).deleteMany({}, function() {});
-        common.db.collection(`push_${appId}_ap`).deleteMany({}, function() {});
+        common.db.collection(`push_${appId}`).drop({}, function() {});
+        C.FIELDS.forEach(f => {
+            common.db.collection(`push_${appId}_${f}`).drop({}, function() {});
+        });
         common.db.collection('apps').findOne({_id: common.db.ObjectID(appId)}, function(err, app) {
             if (err || !app) {
                 return log.e('Cannot find app: %j', err || 'no app');
@@ -484,7 +560,10 @@ const PUSH_CACHE_GROUP = 'P';
     plugins.register('/i/apps/clear_all', function(ob) {
         var appId = ob.appId;
         common.db.collection('messages').remove({'apps': [common.db.ObjectID(appId)]}, function() {});
-        common.db.collection(`push_${appId}`).deleteMany({}, function() {});
+        common.db.collection(`push_${appId}`).drop({}, function() {});
+        C.FIELDS.forEach(f => {
+            common.db.collection(`push_${appId}_${f}`).drop({}, function() {});
+        });
         // common.db.collection('credentials').remove({'apps': [common.db.ObjectID(appId)]},function(){});
     });
 
@@ -492,11 +571,9 @@ const PUSH_CACHE_GROUP = 'P';
         var appId = ob.appId;
         common.db.collection('messages').remove({'apps': [common.db.ObjectID(appId)]}, function() {});
         common.db.collection(`push_${appId}`).drop({}, function() {});
-        common.db.collection(`push_${appId}_id`).drop({}, function() {});
-        common.db.collection(`push_${appId}_ia`).drop({}, function() {});
-        common.db.collection(`push_${appId}_ip`).drop({}, function() {});
-        common.db.collection(`push_${appId}_at`).drop({}, function() {});
-        common.db.collection(`push_${appId}_ap`).drop({}, function() {});
+        C.FIELDS.forEach(f => {
+            common.db.collection(`push_${appId}_${f}`).drop({}, function() {});
+        });
     });
 
     plugins.register('/consent/change', ({params, changes}) => {
@@ -516,7 +593,7 @@ const PUSH_CACHE_GROUP = 'P';
     plugins.register('/i/app_users/export', ({app_id, uids, export_commands, dbargs, export_folder}) => {
         if (uids && uids.length) {
             if (!export_commands.push) {
-                export_commands.push = [{cmd: 'mongoexport', args: [...dbargs, '--collection', `push_${app_id}`, '-q', `{uid: {$in: ${JSON.stringify(uids)}}}`, '--out', `${export_folder}/push_${app_id}.json`]}];
+                export_commands.push = [{cmd: 'mongoexport', args: [...dbargs, '--collection', `push_${app_id}`, '-q', `{"uid": {"$in": ${JSON.stringify(uids)}}}`, '--out', `${export_folder}/push_${app_id}.json`]}];
             }
         }
     });

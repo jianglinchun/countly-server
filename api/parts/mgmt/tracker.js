@@ -94,12 +94,10 @@ tracker.enable = function() {
         setTimeout(function() {
             if (countlyConfig.web.track !== "none" && countlyConfig.web.server_track !== "none") {
                 Countly.begin_session(true);
-                common.db.onOpened(function() {
-                    setTimeout(function() {
-                        collectServerStats();
-                        collectServerData();
-                    }, 20000);
-                });
+                setTimeout(function() {
+                    collectServerStats();
+                    collectServerData();
+                }, 20000);
             }
         }, 1000);
         //report app start trace
@@ -197,6 +195,7 @@ function collectServerStats() { // eslint-disable-line no-unused-vars
 * Get server data
 **/
 function collectServerData() {
+    Countly.userData.set("plugins", plugins.getPlugins());
     var cpus = os.cpus();
     if (cpus && cpus.length) {
         Countly.userData.set("cores", cpus.length);

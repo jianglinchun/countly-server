@@ -7,7 +7,7 @@ const EventEmitter = require('events'),
     ipc = require('./ipc.js'),
     log = require('../../utils/log.js')('jobs:job'),
     retry = require('./retry.js'),
-    ObjectID = require('mongoskin').ObjectID;
+    ObjectID = require('mongodb').ObjectID;
 
 const STATUS = {
         SCHEDULED: 0,
@@ -17,6 +17,15 @@ const STATUS = {
         ABORTED: 4,
         PAUSED: 5,
         WAITING: 6
+    },
+    STATUS_MAP = {
+        0: "SCHEDULED",
+        1: "RUNNING",
+        2: "DONE",
+        3: "CANCELLED",
+        4: "ABORTED",
+        5: "PAUSED",
+        6: "WAITING"
     },
     ERROR = {
         CRASH: 'crash',
@@ -776,38 +785,38 @@ class Job extends EventEmitter {
             this._save({
                 status: STATUS.RUNNING,
                 started: this._json.started
-            });
+            }).then(() => {
+                try {
+                    let promise = this.run(
+                        this.db(),
+                        (err) => {
+                            log.d('%s: done running: error %j', this.id, err);
+                            if (!this.isCompleted) {
+                                this._finish(err).then(
+                                    err ? reject.bind(null, err) : resolve,
+                                    err ? reject.bind(null, err) : reject
+                                );
+                            }
+                        },
+                        () => {});
 
-            try {
-                let promise = this.run(
-                    this.db(),
-                    (err) => {
-                        log.d('%s: done running: error %j', this.id, err);
-                        if (!this.isCompleted) {
-                            this._finish(err).then(
-                                err ? reject.bind(null, err) : resolve,
-                                err ? reject.bind(null, err) : reject
-                            );
-                        }
-                    },
-                    () => {});
-
-                if (promise && promise instanceof Promise) {
-                    promise.then(() => {
-                        log.d('%s: done running', this.id);
-                        this._finish().then(resolve, resolve);
-                    }, (err) => {
-                        log.d('%s: done running: error %j', this.id, err);
-                        if (!this.isCompleted) {
-                            this._finish(err).then(reject.bind(null, err), reject.bind(null, err));
-                        }
-                    });
+                    if (promise && promise instanceof Promise) {
+                        promise.then(() => {
+                            log.d('%s: done running', this.id);
+                            this._finish().then(resolve, resolve);
+                        }, (err) => {
+                            log.d('%s: done running: error %j', this.id, err);
+                            if (!this.isCompleted) {
+                                this._finish(err).then(reject.bind(null, err), reject.bind(null, err));
+                            }
+                        });
+                    }
                 }
-            }
-            catch (e) {
-                log.e('[%s] caught error when running: %j / %j', this.channel, e, e.stack);
-                this._finish(e).then(reject.bind(null, e), reject.bind(null, e));
-            }
+                catch (e) {
+                    log.e('[%s] caught error when running: %j / %j', this.channel, e, e.stack);
+                    this._finish(e).then(reject.bind(null, e), reject.bind(null, e));
+                }
+            }, reject);
         });
     }
 
@@ -1096,5 +1105,6 @@ module.exports = {
     IPCFaçadeJob: IPCFaçadeJob,
     TransientJob: TransientJob,
     STATUS: STATUS,
+    STATUS_MAP: STATUS_MAP,
     debounce: debounce
 };

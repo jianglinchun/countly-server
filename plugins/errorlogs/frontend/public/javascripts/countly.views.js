@@ -1,30 +1,42 @@
-/*globals countlyView,$,countlyErrorLogs,countlyGlobal,Handlebars,jQuery,countlyCommon,CountlyHelpers,app,ErrorLogsView */
+/*globals countlyView,$,countlyErrorLogs,countlyGlobal,T,jQuery,countlyCommon,CountlyHelpers,app,ErrorLogsView */
 window.ErrorLogsView = countlyView.extend({
     initialize: function() {
 
     },
     beforeRender: function() {
-        if (this.template) {
-            return $.when(countlyErrorLogs.initialize()).then(function() {});
-        }
-        else {
-            var self = this;
-            return $.when($.get(countlyGlobal.path + '/errorlogs/templates/logs.html', function(src) {
-                self.template = Handlebars.compile(src);
-            }), countlyErrorLogs.initialize()).then(function() {});
-        }
+        var self = this;
+        return $.when(T.render('/errorlogs/templates/logs.html', function(src) {
+            self.template = src;
+        }), countlyErrorLogs.initialize()).then(function() {
+            var logNames = countlyErrorLogs.getLogNameList();
+            if (logNames.length > 0) {
+                return countlyErrorLogs.getLogByName(logNames[0].value);
+            }
+        });
     },
     renderCommon: function(isRefresh) {
-        var data = countlyErrorLogs.getData();
+        var cachedLog = countlyErrorLogs.getLogCached();
         var download = countlyGlobal.path + "/o/errorlogs?api_key=" + countlyGlobal.member.api_key + "&app_id=" + countlyCommon.ACTIVE_APP_ID + "&download=true&log=";
         this.templateData = {
             "page-title": jQuery.i18n.map["errorlogs.title"],
             download: download,
-            logs: data
+            logName: cachedLog.name,
+            logData: cachedLog.data,
         };
         var self = this;
         if (!isRefresh) {
             $(this.el).html(this.template(this.templateData));
+            var logList = countlyErrorLogs.getLogNameList();
+            $("#error-logger-selector").clySelectSetItems(logList);
+            if (cachedLog.name) {
+                $("#error-logger-selector").clySelectSetSelection(cachedLog.name, cachedLog.name + " Log");
+            }
+            $("#error-logger-selector").off("cly-select-change").on("cly-select-change", function(e, selected) {
+                countlyErrorLogs.getLogByName(selected, function() {
+                    self.renderCommon();
+                    app.localize();
+                });
+            });
             $("#tabs").tabs();
             $(".btn-clear-log").on("click", function() {
                 var id = $(this).data("id");
@@ -35,8 +47,10 @@ window.ErrorLogsView = countlyView.extend({
                     $.when(countlyErrorLogs.del(id)).then(function(resData) {
                         if (resData.result === "Success") {
                             $.when(countlyErrorLogs.initialize()).then(function() {
-                                self.renderCommon();
-                                app.localize();
+                                countlyErrorLogs.getLogByName(id, function() {
+                                    self.renderCommon();
+                                    app.localize();
+                                });
                             });
                         }
                         else {

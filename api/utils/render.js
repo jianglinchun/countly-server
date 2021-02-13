@@ -10,11 +10,13 @@ try {
     puppeteer = require('puppeteer');
 }
 catch (err) {
-    console.warn(
-        `Puppeteer not installed. Please install puppeteer (1.19.0) if
-        you would like to use api/utils/render.js. \nGracefully skipping
-        any functionality associated with Puppeteer...`, err.stack
-    );
+    if (process.env.COUNTLY_CONTAINER !== 'frontend') {
+        console.warn(
+            `Puppeteer not installed. Please install puppeteer (1.19.0) if
+            you would like to use api/utils/render.js. \nGracefully skipping
+            any functionality associated with Puppeteer...`, err.stack
+        );
+    }
 }
 var Promise = require('bluebird');
 var pathModule = require('path');
@@ -99,7 +101,7 @@ exports.renderView = function(options, cb) {
                 log.d("Headless chrome page failed request", request.failure().errorText, request.url());
             });
 
-            var host = "http://" + (process.env.COUNTLY_CONFIG_HOSTNAME || "127.0.0.1") + countlyConfig.path;
+            var host = "http://" + (process.env.COUNTLY_CONFIG_HOSTNAME || "localhost") + countlyConfig.path;
 
             if (options.host) {
                 host = options.host + countlyConfig.path;

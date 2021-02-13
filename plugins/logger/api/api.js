@@ -4,10 +4,10 @@ var exported = {},
 
 (function() {
     var processSDKRequest = function(params) {
-        if (!params.retry_request && !params.log_processed) {
+        if (params.logging_is_allowed) {
             params.log_processed = true;
-            var now = Math.round(new Date().getTime() / 1000);
-            var ts = common.initTimeObj(null, params.qstring.timestamp || now).timestamp;
+            var now = new Date().getTime();
+            var ts = common.initTimeObj(null, params.qstring.timestamp || now).mstimestamp;
             var device = {};
             device.id = params.qstring.device_id || "";
             var location = {};
@@ -43,8 +43,34 @@ var exported = {},
                 if (!types.change_id) {
                     types.change_id = {};
                 }
-                types.change_id.old_device_id = params.qstring.begin_session;
+                types.change_id.old_device_id = params.qstring.old_device_id;
                 types.change_id.device_id = params.qstring.device_id;
+            }
+            if (params.old_device_id) {
+                //Set for logging by the FETCH API
+                if (!types.change_id) {
+                    types.change_id = {};
+                }
+                types.change_id.old_device_id = params.old_device_id;
+                types.change_id.device_id = params.qstring.device_id;
+                q = JSON.parse(q);
+                q.old_device_id = params.old_device_id;
+                q = JSON.stringify(q);
+            }
+            if (params.qstring.token_session) {
+                if (!types.token) {
+                    types.token = {};
+                }
+                types.token.token_session = params.qstring.token_session;
+                if (params.qstring.ios_token) {
+                    types.token.ios_token = params.qstring.ios_token;
+                }
+                if (params.qstring.android_token) {
+                    types.token.android_token = params.qstring.android_token;
+                }
+                if (typeof params.qstring.test_mode !== "undefined") {
+                    types.token.test_mode = params.qstring.test_mode;
+                }
             }
             if (params.qstring.begin_session) {
                 if (!types.session) {
@@ -146,35 +172,12 @@ var exported = {},
                 }
             }
 
-            if (params.qstring.apm) {
-                types.apm = params.qstring.apm;
-                if (types.apm && typeof types.apm === "object") {
-                    types.apm = JSON.stringify(types.apm);
-                }
-                var apm;
-                try {
-                    apm = JSON.parse(types.apm);
-                }
-                catch (ex) {
-                    problems.push("Could not parse apm");
-                }
-                if (apm) {
-                    if (!(apm.type === "network" || apm.type === "device")) {
-                        problems.push("APM only supports trace types network or device");
-                    }
-                    if (!(apm.name && apm.name.length)) {
-                        problems.push("APM requires trace name");
-                    }
-                    if (!(typeof (apm.apm_metrics) === "object" && !Array.isArray(apm.apm_metrics))) {
-                        problems.push("APM requires apm_metrics object");
-                    }
-                    if (apm.apm_attr && !(typeof (apm.apm_attr) === "object" && !Array.isArray(apm.apm_attr))) {
-                        problems.push("APM requires apm_attr to be object if provided");
-                    }
-                    if (!plugins.isPluginEnabled("performance-monitoring")) {
-                        problems.push("Plugin that processes this information is not enabled: performance-monitoring");
-                    }
-                }
+            if (params.qstring.apm && !plugins.isPluginEnabled("performance-monitoring")) {
+                problems.push("Plugin that processes this information is not enabled: performance-monitoring");
+            }
+
+            if ((params.qstring.method === "fetch_remote_config") && !plugins.isPluginEnabled("remote-config")) {
+                problems.push("Plugin that processes this information is not enabled: remote-config");
             }
 
             if (params.app.type !== "web" && params.qstring.sdk_name === "javascript_native_web") {
@@ -221,17 +224,20 @@ var exported = {},
         }
     };
     //write api call
-    plugins.register("/sdk", function(ob) {
+    plugins.register("/sdk/log", function(ob) {
+        ob.params.logging_is_allowed = !ob.params.retry_request && !ob.params.log_processed;
         processSDKRequest(ob.params);
     });
 
     //logging fetch api call
     plugins.register("/o/sdk/log", function(ob) {
+        ob.params.logging_is_allowed = !ob.params.log_processed;
         processSDKRequest(ob.params);
     });
 
     //write api call
     plugins.register("/sdk/cancel", function(ob) {
+        ob.params.logging_is_allowed = !ob.params.retry_request && !ob.params.log_processed;
         var params = ob.params;
         if (params.app) {
             processSDKRequest(params);

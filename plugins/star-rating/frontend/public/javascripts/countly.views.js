@@ -1,4 +1,4 @@
-/*global $, starRatingPlugin, app, jQuery, CountlyHelpers, starView, store, countlyGlobal, countlyCommon, ClipboardJS, tippy, moment, countlyView, Handlebars, path1, addDrill, countlySegmentation*/
+/*global $, countlyReporting, starRatingPlugin, app, jQuery, CountlyHelpers, starView, store, countlyGlobal, countlyCommon, ClipboardJS, tippy, moment, countlyView, T, path1, addDrill, countlySegmentation*/
 window.starView = countlyView.extend({
     /**
      * this variable contains the infos that render view required.
@@ -8,7 +8,7 @@ window.starView = countlyView.extend({
 
     },
     templateData: {
-        "page-title": jQuery.i18n.map["star.menu-title"],
+        "page-title": jQuery.i18n.map["feedback.ratings-tab-table-title"],
         platform_version: null,
         rating: null,
         timeSeriesData: null
@@ -89,8 +89,9 @@ window.starView = countlyView.extend({
     beforeRender: function() {
         var self = this;
         // will load template, platform and version, periodperiod's rating data
-        return $.when($.get(countlyGlobal.path + '/star-rating/templates/star.html'), starRatingPlugin.requestPlatformVersion(), starRatingPlugin.requestRatingInPeriod(), starRatingPlugin.requesPeriod(), starRatingPlugin.requestFeedbackData(), starRatingPlugin.requestFeedbackWidgetsData()).done(function(result) {
-            self.template = Handlebars.compile(result[0]);
+        return $.when(T.render('/star-rating/templates/star.html', function(src) {
+            self.template = src;
+        }), starRatingPlugin.requestPlatformVersion(), starRatingPlugin.requestRatingInPeriod(), starRatingPlugin.requesPeriod(), starRatingPlugin.requestFeedbackData(), starRatingPlugin.requestFeedbackWidgetsData()).done(function() {
             self.templateData.platform_version = starRatingPlugin.getPlatformVersion();
 
             self.templateData.rating = starRatingPlugin.getRatingInPeriod();
@@ -105,9 +106,10 @@ window.starView = countlyView.extend({
     loadPlatformData: function() {
         var self = this;
         $(".platform-list").html('<div data-value="All Platforms" class="platform-option item" data-localize="star.all-platforms">' + jQuery.i18n.map['star.all-platforms'] + '</div>');
-        for (var platform in this.templateData.platform_version) {
-            if (platform !== 'undefined') {
-                $(".platform-list").append('<div data-value="' + platform + '" class="platform-option item" data-localize="">' + platform + '</div>');
+        var platforms = Object.keys(this.templateData.platform_version).sort();
+        for (var platform = 0; platform < platforms.length; platform++) {
+            if (platforms[platform] !== 'undefined') {
+                $(".platform-list").append('<div data-value="' + platforms[platform] + '" class="platform-option item" data-localize="">' + platforms[platform] + '</div>');
             }
         }
         $(".platform-option").on("click", function() {
@@ -127,6 +129,7 @@ window.starView = countlyView.extend({
      */
     loadWidgetData: function() {
         $(".widget-list").html('<div data-value="All Widgets" class="widget-option item" data-localize="star.all-widgets">' + jQuery.i18n.map['star.all-widgets'] + '</div>');
+        this.templateData.widget.sort();
         for (var i = 0; i < this.templateData.widget.length; i++) {
             $(".widget-list").append('<div data-value="' + this.templateData.widget[i]._id + '" class="widget-option item" data-localize="">' + this.templateData.widget[i].popup_header_text + '</div>');
         }
@@ -367,14 +370,14 @@ window.starView = countlyView.extend({
 
                 if (bparts[p]) {
                     if (parseInt(aparts[p]) < parseInt(bparts[p])) {
-                        return -1;
+                        return 1;
                     }
                     else if (parseInt(aparts[p]) > parseInt(bparts[p])) {
-                        return 1;
+                        return -1;
                     }
                 }
                 else {
-                    return -1;
+                    return 1;
                 }
             }
             return 0;
@@ -402,6 +405,7 @@ window.starView = countlyView.extend({
         self.renderCommentsTable(true);
         self.renderFeedbacksTable(true);
         if (self.currentTab === 'cumulative') {
+            $('.widget-content').addClass('hide-zoom');
             self.renderCumulativeChart();
             self.renderCumulativeTable(isRefresh);
             $('#tableTwo_wrapper').css("display", "none");
@@ -409,6 +413,7 @@ window.starView = countlyView.extend({
             $('#big-numbers-container').css("display", "none");
         }
         if (self.currentTab === 'time-series') {
+            $('.widget-content').removeClass('hide-zoom');
             self.renderTimeSeriesTable(isRefresh);
             self.renderTimeSeriesChart();
             CountlyHelpers.applyColors();
@@ -563,6 +568,7 @@ window.starView = countlyView.extend({
             "mData": "count",
             "sType": "numeric",
             "sTitle": jQuery.i18n.map["star.number-of-ratings"],
+            "sWidth": "200px",
             "mRender": function(d) {
                 return countlyCommon.formatNumber(d);
             }
@@ -605,7 +611,9 @@ window.starView = countlyView.extend({
             da.dp[0].data[i][1] = this.cumulativeData[i - 1].count;
         }
         if (self._tab === 'ratings') {
-            countlyCommon.drawGraph(da, "#dashboard-graph", "bar", {
+            $('#dashboard-graph-time').hide();
+            $('#dashboard-graph-cumulative').show();
+            countlyCommon.drawGraph(da, "#dashboard-graph-cumulative", "bar", {
                 colors: [countlyCommon.GRAPH_COLORS[0]]
             });
         }
@@ -804,14 +812,17 @@ window.starView = countlyView.extend({
             }
         }
         if (self._tab === 'ratings') {
-            return countlyCommon.drawTimeGraph(renderData, "#dashboard-graph", bucket, overrideBucket);
+            $('#dashboard-graph-time').show();
+            $('#dashboard-graph-cumulative').hide();
+            return countlyCommon.drawTimeGraph(renderData, "#dashboard-graph-time", bucket, overrideBucket);
         }
     },
     renderCommentsTable: function(isRefresh) {
         var self = this;
-        this.templateData.commentsData = this.getFeedbackData();
+        this.templateData.commentsData = this.getFeedbackData().aaData;
+
         if (isRefresh) {
-            CountlyHelpers.refreshTable($('#tableThree').dataTable(), this.templateData.commentsData);
+            CountlyHelpers.refreshTable(self.commentsTable, this.templateData.commentsData);
         }
         else {
             var columnsDefine = [{
@@ -826,6 +837,16 @@ window.starView = countlyView.extend({
                     return d;
                 }
             }, {
+                "mData": "ts",
+                sType: "numeric",
+                "sTitle": jQuery.i18n.map["common.time"],
+                "mRender": function(d, type) {
+                    if (type === "display") {
+                        return moment.unix(d).format("DD MMMM YYYY HH:MM:SS");
+                    }
+                    return d;
+                }
+            }, {
                 "mData": function(row) {
                     if (row.comment) {
                         return row.comment;
@@ -835,7 +856,8 @@ window.starView = countlyView.extend({
                     }
                 },
                 sType: "string",
-                "sTitle": jQuery.i18n.map["feedback.comment"]
+                "sTitle": jQuery.i18n.map["feedback.comment"],
+                bSortable: false
             }, {
                 "mData": function(row) {
                     if (row.email) {
@@ -846,44 +868,27 @@ window.starView = countlyView.extend({
                     }
                 },
                 sType: "string",
-                "sTitle": jQuery.i18n.map["management-users.email"]
-            }, {
-                "mData": "ts",
-                sType: "numeric",
-                "sTitle": jQuery.i18n.map["common.time"],
-                "mRender": function(d, type) {
-                    if (type === "display") {
-                        return countlyCommon.formatTimeAgo(d || 0);
-                    }
-                    return d;
-                }
+                "sTitle": jQuery.i18n.map["management-users.email"],
+                bSortable: false
             }];
-            $('#tableThree').dataTable($.extend({}, $.fn.dataTable.defaults, {
-                "bServerSide": true,
-                "bFilter": true,
-                "sAjaxSource": countlyCommon.API_PARTS.data.r + "/feedback/data?app_id=" + countlyCommon.ACTIVE_APP_ID,
-                "fnServerData": function(sSource, aoData, fnCallback) {
-                    if (self.ratingFilter.comments.rating && self.ratingFilter.comments.rating !== "") {
-                        sSource += "&rating=" + self.ratingFilter.comments.rating;
+
+            if (countlyGlobal.plugins.indexOf("users") >= 0) {
+                columnsDefine.push(
+                    {
+                        "mData": function(row) {
+                            return "<a class='table-link green external' href='#/users/" + row.uid + "'>" + jQuery.i18n.map["userdata.view"] + "</a>";
+                        },
+                        sType: "string",
+                        "bSortable": false,
+                        "sTitle": '',
+                        "sClass": "center",
+                        "sWidth": "90px"
                     }
-                    if (self.ratingFilter.comments.version && self.ratingFilter.comments.version !== "") {
-                        sSource += "&version=" + self.ratingFilter.comments.version;
-                    }
-                    if (self.ratingFilter.comments.platform && self.ratingFilter.comments.platform !== "") {
-                        sSource += "&platform=" + self.ratingFilter.comments.platform;
-                    }
-                    if (self.ratingFilter.comments.widget && self.ratingFilter.comments.widget !== "") {
-                        sSource += "&widget_id=" + self.ratingFilter.comments.widget;
-                    }
-                    $.ajax({
-                        type: "GET",
-                        url: sSource,
-                        data: aoData,
-                        success: function(responseData) {
-                            fnCallback(responseData);
-                        }
-                    });
-                },
+                );
+            }
+
+            this.commentsTable = $('#tableThree').dataTable($.extend({}, $.fn.dataTable.defaults, {
+                "aaData": this.templateData.commentsData,
                 "aoColumns": columnsDefine
             }));
         }
@@ -960,7 +965,7 @@ window.starView = countlyView.extend({
                         }
                         row.target_pages.forEach(function(page) {
                             if (row.target_pages.indexOf(page) < 5) {
-                                target_pages += "<div class='feedback-widget-target-page-item'>" + page + "</div>";
+                                target_pages += "<a class='feedback-widget-target-page-item' title='" + page + "'>" + (page.length < 20 ? page : (page.substr(0, 20) + "...")) + "</a>";
                             }
                             else if (row.target_pages.indexOf(page) === 5) {
                                 target_pages += "<div class='feedback-widget-target-page-item'>And " + (row.target_pages.length - 5) + " more...</div>";
@@ -1155,6 +1160,11 @@ window.starView = countlyView.extend({
             "display": "block"
         });
     },
+    decode: function(string) {
+        var div = document.createElement("div");
+        div.innerHTML = string;
+        return typeof div.textContent !== 'undefined' ? div.textContent : div.innerText;
+    },
     renderCommon: function(isRefresh) {
         var self = this;
         new ClipboardJS('.copy-widget-id');
@@ -1195,7 +1205,7 @@ window.starView = countlyView.extend({
             };
 
             if (typeof addDrill !== "undefined") {
-                $("#content .widget:first-child .widget-header>.left .title").after(addDrill("sg.rating", null, "[CLY]_star_rating"));
+                $("#content #feedback-ratings-tab .widget:first-child .widget-header>.left .title").after(addDrill("sg.rating", null, "[CLY]_star_rating"));
             }
 
             self.renderCommentsTable();
@@ -1237,7 +1247,8 @@ window.starView = countlyView.extend({
                 $('#overlay').fadeIn();
                 $('#widgets-array').html($(this).data('id'));
                 $('.feedback-copy-code').attr("data-clipboard-text", "Countly.q.push(['enable_feedback',{'widgets':['" + $(this).data('id') + "']}]);");
-                $('.feedback-modal').css({
+                var type = countlyGlobal.apps[store.get('countly_active_app')].type === 'web' ? 'web' : 'mobile';
+                $('#feedback-' + type + '-integration').css({
                     "display": "block"
                 });
                 var id = $(this).data('id');
@@ -1512,6 +1523,12 @@ window.starView = countlyView.extend({
                             "key": input
                         };
                     }
+                },
+                onItemRemove: function(input) {
+                    var index = self.feedbackWidget.target_pages.indexOf(input);
+                    if (index > -1) {
+                        self.feedbackWidget.target_pages.splice(index, 1);
+                    }
                 }
             });
 
@@ -1734,18 +1751,22 @@ window.starView = countlyView.extend({
                 }
             });
             var renderFeedbackWidgetModal = function(isCreate) {
-                $("#feedback-popup-header-text").val(isCreate ? "" : self.feedbackWidget.popup_header_text);
-                $("#feedback-popup-comment-text").val(isCreate ? "" : self.feedbackWidget.popup_comment_callout);
-                $("#feedback-popup-email-text").val(isCreate ? "" : self.feedbackWidget.popup_email_callout);
-                $("#feedback-popup-button-text").val(isCreate ? "" : self.feedbackWidget.popup_button_callout);
-                $("#feedback-popup-thanks-text").val(isCreate ? "" : self.feedbackWidget.popup_thanks_message);
-                $("#feedback-trigger-text").val(isCreate ? "" : self.feedbackWidget.trigger_button_text);
+                $("#feedback-popup-header-text").val(isCreate ? "" : self.decode(self.feedbackWidget.popup_header_text));
+                $("#feedback-popup-comment-text").val(isCreate ? "" : self.decode(self.feedbackWidget.popup_comment_callout));
+                $("#feedback-popup-email-text").val(isCreate ? "" : self.decode(self.feedbackWidget.popup_email_callout));
+                $("#feedback-popup-button-text").val(isCreate ? "" : self.decode(self.feedbackWidget.popup_button_callout));
+                $("#feedback-popup-thanks-text").val(isCreate ? "" : self.decode(self.feedbackWidget.popup_thanks_message));
+                $("#feedback-trigger-text").val(isCreate ? "" : self.decode(self.feedbackWidget.trigger_button_text));
 
                 $("#counter-for-feedback-popup-header-text").html($("#feedback-popup-header-text").val().length + "/45");
                 $("#counter-for-feedback-popup-comment-text").html($("#feedback-popup-comment-text").val().length + "/25");
                 $("#counter-for-feedback-popup-email-text").html($("#feedback-popup-email-text").val().length + "/35");
                 $("#counter-for-feedback-popup-button-text").html($("#feedback-popup-button-text").val().length + "/35");
                 $("#counter-for-feedback-popup-thanks-text").html($("#feedback-popup-thanks-text").val().length + "/45");
+
+                if (!self.feedbackWidget.trigger_size) {
+                    self.feedbackWidget.trigger_size = "m";
+                }
 
                 // add related place and size class to sticker preview
                 $("#feedback-sticker-on-window").removeClass().addClass(self.feedbackWidget.trigger_position + '-' + self.feedbackWidget.trigger_size);
@@ -1755,7 +1776,9 @@ window.starView = countlyView.extend({
                 $("#countly-feedback-email-title").html(self.feedbackWidget.popup_email_callout);
                 $("#feedback-submit-button").html(self.feedbackWidget.popup_button_callout);
                 $(".success-emotions-area > #question-area").html(self.feedbackWidget.popup_thanks_message);
-                $("#feedback-sticker-on-window").html("<svg id=\"feedback-sticker-svg\" aria-hidden=\"true\" data-prefix=\"far\" data-icon=\"grin\" class=\"svg-inline--fa fa-grin fa-w-16\" role=\"img\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 496 512\"><path id=\"path1\" fill=\"white\" d=\"M248 8C111 8 0 119 0 256s111 248 248 248 248-111 248-248S385 8 248 8zm0 448c-110.3 0-200-89.7-200-200S137.7 56 248 56s200 89.7 200 200-89.7 200-200 200zm105.6-151.4c-25.9 8.3-64.4 13.1-105.6 13.1s-79.6-4.8-105.6-13.1c-9.9-3.1-19.4 5.4-17.7 15.3 7.9 47.1 71.3 80 123.3 80s115.3-32.9 123.3-80c1.6-9.8-7.7-18.4-17.7-15.3zM168 240c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32zm160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32z\"></path></svg> " + self.feedbackWidget.trigger_button_text);
+
+                var reducedTriggerText = self.feedbackWidget.trigger_button_text.length > 10 ? self.feedbackWidget.trigger_button_text.substr(0, 10) + '...' : self.feedbackWidget.trigger_button_text;
+                $('#feedback-sticker-on-window').html('<svg id="feedback-sticker-svg" aria-hidden="true" data-prefix="far" data-icon="grin" class="svg-inline--fa fa-grin fa-w-16" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><path id="path1" fill="white" d="M248 8C111 8 0 119 0 256s111 248 248 248 248-111 248-248S385 8 248 8zm0 448c-110.3 0-200-89.7-200-200S137.7 56 248 56s200 89.7 200 200-89.7 200-200 200zm105.6-151.4c-25.9 8.3-64.4 13.1-105.6 13.1s-79.6-4.8-105.6-13.1c-9.9-3.1-19.4 5.4-17.7 15.3 7.9 47.1 71.3 80 123.3 80s115.3-32.9 123.3-80c1.6-9.8-7.7-18.4-17.7-15.3zM168 240c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32zm160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32z"></path></svg> ' + reducedTriggerText);
 
                 $(".device-box:lt(3)").each(function(index, element) {
                     $(element).removeClass("active-position-box");
@@ -2065,7 +2088,7 @@ window.starView = countlyView.extend({
                                     title: jQuery.i18n.map['feedback.successfully-created'],
                                     message: jQuery.i18n.map['feedback.successfully-created-message']
                                 });
-                                $('.feedback-modal').css({
+                                $('#feedback-' + countlyGlobal.apps[store.get('countly_active_app')].type + '-integration').css({
                                     "display": "block"
                                 });
                                 self.renderFeedbacksTable(true);
@@ -2121,7 +2144,8 @@ window.starView = countlyView.extend({
                 }
                 else {
                     self.feedbackWidget.trigger_button_text = countlyCommon.encodeHtml($(this).val());
-                    $('#feedback-sticker-on-window').html('<svg id="feedback-sticker-svg" aria-hidden="true" data-prefix="far" data-icon="grin" class="svg-inline--fa fa-grin fa-w-16" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><path id="path1" fill="white" d="M248 8C111 8 0 119 0 256s111 248 248 248 248-111 248-248S385 8 248 8zm0 448c-110.3 0-200-89.7-200-200S137.7 56 248 56s200 89.7 200 200-89.7 200-200 200zm105.6-151.4c-25.9 8.3-64.4 13.1-105.6 13.1s-79.6-4.8-105.6-13.1c-9.9-3.1-19.4 5.4-17.7 15.3 7.9 47.1 71.3 80 123.3 80s115.3-32.9 123.3-80c1.6-9.8-7.7-18.4-17.7-15.3zM168 240c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32zm160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32z"></path></svg> ' + self.feedbackWidget.trigger_button_text);
+                    var reducedTriggerText = self.feedbackWidget.trigger_button_text.length > 10 ? self.feedbackWidget.trigger_button_text.substr(0, 10) + '...' : self.feedbackWidget.trigger_button_text;
+                    $('#feedback-sticker-on-window').html('<svg id="feedback-sticker-svg" aria-hidden="true" data-prefix="far" data-icon="grin" class="svg-inline--fa fa-grin fa-w-16" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><path id="path1" fill="white" d="M248 8C111 8 0 119 0 256s111 248 248 248 248-111 248-248S385 8 248 8zm0 448c-110.3 0-200-89.7-200-200S137.7 56 248 56s200 89.7 200 200-89.7 200-200 200zm105.6-151.4c-25.9 8.3-64.4 13.1-105.6 13.1s-79.6-4.8-105.6-13.1c-9.9-3.1-19.4 5.4-17.7 15.3 7.9 47.1 71.3 80 123.3 80s115.3-32.9 123.3-80c1.6-9.8-7.7-18.4-17.7-15.3zM168 240c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32zm160 0c17.7 0 32-14.3 32-32s-14.3-32-32-32-32 14.3-32 32 14.3 32 32 32z"></path></svg> ' + reducedTriggerText);
                 }
             });
             $('#feedback-popup-comment-text').on('keyup', function() {
@@ -2292,6 +2316,11 @@ app.route("/analytics/star-rating/:tab", 'star', function(tab) {
     this.renderWhenReady(this.starView);
 });
 
+
+app.addPageScript("/manage/reports", function() {
+    countlyReporting.addMetric({name: jQuery.i18n.map["reports.star-rating"], value: "star-rating"});
+});
+
 app.addPageScript("/drill#", function() {
     var drillClone;
     var self = app.drillView;
@@ -2302,49 +2331,155 @@ app.addPageScript("/drill#", function() {
     }
 
     if (record_star_rating) {
-        $("#drill-types").append('<div id="drill-type-star-rating" class="item"><div class="inner"><span class="icon star-rating"><i class="material-icons">star_half</i></span><span class="text">' + jQuery.i18n.map["internal-events.[CLY]_star_rating"] + '</span></div></div>');
-        $("#drill-type-star-rating").on("click", function() {
-            if ($(this).hasClass("active")) {
-                return true;
-            }
+        if (!$("#drill-type-feedback").length) {
+            $("#drill-types").append('<div id="drill-type-feedback" class="item two-phase-selector"><div class="inner"><span class="icon star-rating"><i class="material-icons">star_half</i></span><span class="text">' + jQuery.i18n.map["sidebar.feedback"] + '</span></div></div>');
 
-            $("#drill-types").find(".item").removeClass("active");
-            $(this).addClass("active");
-            $("#event-selector").hide();
-
-            $("#drill-no-event").fadeOut();
-            $("#segmentation-start").fadeOut().remove();
-
-            self.graphType = "line";
-            self.graphVal = "times";
-            self.filterObj = {};
-            self.byVal = "";
-            self.drillChartDP = {};
-            self.drillChartData = {};
-            self.activeSegmentForTable = "";
-            countlySegmentation.reset();
-
-            $("#drill-navigation").find(".menu[data-open=table-view]").hide();
-
-            $.when(countlySegmentation.initialize("[CLY]_star_rating")).then(function() {
-                $("#drill").replaceWith(drillClone.clone(true));
-                self.adjustFilters();
-                self.draw(true, false);
+            var dropdown = '<div id="feedback-selector" class="select-configuration">' +
+                    '<div class="text-wrapper" data-localize="drill.select-event"></div>' +
+                    '<div class="event-select">' +
+                      '<div class="menu">' +
+                        '<div class="search event-search">' +
+                            '<input type="text" readonly onfocus="if (this.hasAttribute(\'readonly\')) {this.removeAttribute(\'readonly\'); this.blur(); this.focus();}">' +
+                        '</div>' +
+                        '<div class="list"></div>' +
+                      '</div>' +
+                   '</div>' +
+                 '</div>';
+            $("#selector-no-event").after(dropdown);
+            $("#feedback-selector").hide();
+            $("#drill-types > .item").on("click", function() {
+                $("#feedback-selector").hide();
             });
-        });
+
+            $("#drill-type-feedback").on("click", function() {
+
+                if ($(this).hasClass("active")) {
+                    return true;
+                }
+                $("#drill-types").find(".item").removeClass("active");
+                $(this).addClass("active");
+
+                if ($("#event-selector").is(":visible")) {
+                    $("#event-selector").hide();
+                }
+
+                $("#feedback-selector").show();
+                $(".event-select input").focus();
+            });
+
+            $("#feedback-selector .event-select").on("click", ".item", function() {
+                $(this).parent().find(".item").removeClass("active");
+                $(this).addClass("active");
+
+                self.graphType = "line";
+                self.graphVal = "times";
+                self.filterObj = {};
+                self.byVal = "";
+                self.drillChartDP = {};
+                self.drillChartData = {};
+                self.activeSegmentForTable = "";
+                countlySegmentation.reset();
+
+                $("#drill-navigation").find(".menu[data-open=table-view]").hide();
+
+                var currEvent = $(this).data("value");
+                var currEventTitle = $(this).html();
+
+                $.when(countlySegmentation.initialize(currEvent)).then(function() {
+                    $("#drill-filter-view").replaceWith(drillClone.clone(true));
+                    self.adjustFilters();
+                    if (!self.keepQueryTillExec) {
+                        self.draw(true, false);
+                    }
+                });
+                $("#feedback-selector .event-select").data("value", currEvent);
+                $("#drill-type-select").find(".select-toggler .text").text($("#drill-type-feedback").find(".text").text() + ", " + currEventTitle);
+                $("#drill-type-select").find(".select-toggler").removeClass('active');
+                $("#drill-type-select").find(".main-square").hide();
+                $("#drill-type-select").find(".arrow").removeClass("ion-chevron-up").addClass("ion-chevron-down");
+            });
+
+            $(".event-select input").off("keydown").on("keydown", function(e) {
+                var selector = ".event-select .item.in-subset.navigating";
+                if (e.keyCode === 40) {
+                    var nextItem = $(selector).removeClass("navigating").nextAll('.in-subset:first');
+                    if (nextItem.length === 0) {
+                        nextItem = $('.event-select .item.in-subset:first');
+                    }
+                    nextItem.addClass("navigating");
+                }
+                else if (e.keyCode === 38) {
+                    var prevItem = $(selector).removeClass("navigating").prevAll(".in-subset:first");
+                    if (prevItem.length === 0) {
+                        prevItem = $('.event-select .item.in-subset:last');
+                    }
+                    prevItem.addClass("navigating");
+                }
+                else if (e.keyCode === 13) {
+                    $(selector).trigger("click");
+                }
+                if ($(selector).length !== 0) {
+                    var offset = $(selector).position().top - $(selector).parent().position().top;
+                    $(selector).parent().scrollTop(offset);
+                }
+            });
+
+            $('.event-search').off("input", "input").on('input', "input", function() {
+                var searchText = new RegExp($(this).val().toLowerCase().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')),
+                    searchInside = $(this).parent().next().find(".searchable").addClass("in-subset");
+
+                searchInside.filter(function() {
+                    return !(searchText.test($(this).text().toLowerCase()));
+                }).css('display', 'none').removeClass("in-subset").removeClass("navigating");
+
+                searchInside.filter(function() {
+                    return searchText.test($(this).text().toLowerCase());
+                }).css('display', 'block');
+            });
+        }
+        var tmpItem = $("<div>");
+        tmpItem.addClass("item").addClass("searchable").addClass("in-subset");
+        tmpItem.attr("data-value", "[CLY]_star_rating");
+        tmpItem.text(jQuery.i18n.map["internal-events.[CLY]_star_rating"]);
+        $("#feedback-selector").find(".list").append(tmpItem);
     }
 
     setTimeout(function() {
-        drillClone = $("#drill").clone(true);
+        drillClone = $("#drill-filter-view").clone(true);
     }, 0);
 });
 
 $(document).ready(function() {
-    app.addMenu("reach", {
+    if (!$("#feedback-menu").length) {
+        app.addMenu("reach", {code: "feedback", text: "sidebar.feedback", icon: '<div class="logo ion-android-star-half"></div>', priority: 20});
+    }
+
+    app.addSubMenu("feedback", {
         code: "star-rating",
         url: "#/analytics/star-rating",
-        text: "star.menu-title",
-        icon: '<div class="logo ion-android-star-half"></div>',
-        priority: 20
+        text: "star.ratings",
+        priority: 30
+    });
+});
+
+app.addPageScript("/manage/export/export-features", function() {
+    $.when(starRatingPlugin.requestFeedbackWidgetsData()).then(function() {
+        var widgets = starRatingPlugin.getFeedbackWidgetsData();
+        var widgetsList = [];
+        widgets.forEach(function(widget) {
+            widgetsList.push({
+                id: widget._id,
+                name: widget.popup_header_text
+            });
+        });
+
+        var selectItem = {
+            id: "feedback_widgets",
+            name: "Feedback Widgets",
+            children: widgetsList
+        };
+        if (widgetsList.length) {
+            app.exportView.addSelectTable(selectItem);
+        }
     });
 });

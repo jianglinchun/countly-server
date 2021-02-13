@@ -1,4 +1,4 @@
-/*global $, jQuery, countlyCommon, countlyView, CountlyHelpers, countlyGlobal, app, _, Handlebars, CompareView, countlyEventCompare, countlyAppCompare, countlyEvent*/
+/*global $, jQuery, countlyCommon, countlyView, CountlyHelpers, countlyGlobal, app, _, T, CompareView, countlyEventCompare, countlyAppCompare, countlyEvent*/
 window.CompareView = countlyView.extend({
     selectedMetric: null,
     selectedAlt: null,
@@ -23,8 +23,8 @@ window.CompareView = countlyView.extend({
         var self = this;
 
         return $.when(
-            $.get(countlyGlobal.path + '/compare/templates/compare.html', function(src) {
-                self.template = Handlebars.compile(src);
+            T.render('/compare/templates/compare.html', function(src) {
+                self.template = src;
             }),
             self.viewHelper.model.initialize(),
             self.viewHelper.beforeRender()
@@ -151,6 +151,9 @@ window.CompareView = countlyView.extend({
     drawGraph: function() {
         var dp = [];
         for (var i = 0; i < this.selectedAlts.length; i++) {
+            if (typeof countlyCommon.GRAPH_COLORS[i] === "undefined") {
+                break;
+            }
             var color = countlyCommon.GRAPH_COLORS[i];
             var data = this.viewHelper.model.getChartData(this.selectedAlts[i], this.selectedMetric).chartDP;
             if (data) {
@@ -188,6 +191,12 @@ window.CompareView = countlyView.extend({
         }
 
         countlyCommon.drawTimeGraph(dp, "#dashboard-graph");
+
+        var list = [];
+        for (var z in this.templateData.alternatives) {
+            list.push({"value": z, "name": this.templateData.alternatives[z]});
+        }
+        $("#alternative-selector").clyMultiSelectSetItems(list);
     },
     refresh: function() {
         var self = this;
@@ -245,7 +254,7 @@ var compareEventsViewHelper = {
         text: jQuery.i18n.map["compare.events.back"]
     },
     compareText: jQuery.i18n.map["compare.events.limit"],
-    maxAlternatives: 10,
+    maxAlternatives: 20,
     beforeRender: function() {
 
     },
@@ -293,14 +302,14 @@ var compareEventsViewHelper = {
         ];
     },
     getAlternatives: function() {
-        var events = countlyEvent.getEvents(),
-            keys = _.pluck(events, "key"),
-            names = _.pluck(events, "name");
-
+        var events = countlyEvent.getEvents(false, true);
         var toReturn = {};
 
-        for (var i = 0; i < keys.length; i++) {
-            toReturn[keys[i]] = names[i] || keys[i];
+        for (var i = 0; i < events.length; i++) {
+            toReturn[events[i].key] = events[i].name || events[i].key;
+            if (events[i].is_event_group) {
+                toReturn[events[i].key] += "<div class='group-badge'><span> (</span>" + jQuery.i18n.prop("common.group") + "<span>)</span></div>";
+            }
         }
 
         return toReturn;
@@ -330,7 +339,7 @@ var compareAppsViewHelper = {
     model: countlyAppCompare,
     defaultMetric: "draw-total-sessions",
     compareText: jQuery.i18n.map["compare.apps.limit"],
-    maxAlternatives: 10,
+    maxAlternatives: 20,
     initOnDateChange: true,
     getTableColumns: function() {
         /**

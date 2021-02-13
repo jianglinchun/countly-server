@@ -1,4 +1,286 @@
-## Version 20.03
+## Version 20.11.1
+
+**Fixes**
+* [apps] application settings Save button fixed
+* [consolidate] UI fixes
+* [events] fixed displaying long segents in events table
+* [events] fixed issue when updating event description doesn't work
+* [events] top events - check for deleted events
+* [push] fixed APN issue when DNS returns 1 IP
+* [star-rating] first emotion size problem fixed
+* [two-factor-auth] fxied when session was enabled before OTP verification
+* [UI] date picker behavior improvements
+* [UI] provide notification popup to notify about incomplete upgrade
+* [views] fixed edit views table export
+* [views] fixed showing renamed view name in table
+
+**Enterprise fixes**
+* [active_directory] fix retrieving email address for azure auth
+* [ab-testing] centos 8 support
+* [cohorts] allow to treat some lists as numbers
+* [cohorts] allow using numbers in AND statements
+* [cohorts] fix is set filling on cohort edit
+* [cohorts] improve cohort overview loading with more than 100 cohorts
+* [crash_symbols] changed the wording of debug symbol files
+* [dashboards] disable confirm popup on custom dashboard screenshots
+* [dashboards] fixed colors for white theme
+* [dashboards] remove dashboard user when user deleted
+* [drill] aggregated data regeneration fixed when daylight saving time occurs
+* [drill] handle arrays properly in meta generations
+* [formulas] don't allow to use same name and improve the messages on pop-up(s)
+* [funnels] improve funnel overview loading
+* [funnels] store funnel data in gridfs for report manager to allow large data storage
+* [okta] fixed issuer url
+* [remote-config] fixed not loading remote config list when there are many values
+* [retention_segments] correct retention type descriptions
+* [retention_segments] links to user profiles should be removed from tooltips
+* [surveys] fixed All Time selection
+* [users] fix increasing event count in sessions table
+* [users] fixed ignoring query in user profile list on large quantity of custom properties
+* [views] fixed heat maps
+
+**Enterprise Improvements**
+* [concurrent_users] less writes on data ingestion
+* [concurrent_users] show Max Concurrent Online Users in the analytics section
+* [dashboards] allow font customizations for notes widget
+* [dashboards] allow separate period in some widgets
+* [funnels] add caching mode options for bigger data
+* [groups] allow space in group id
+* [retention_segments] add configurable size to days in retention in custom dashboards
+* [retention_segments] display percentages in the cells in custom dashboards
+* [users] Adding push tokens & geo to user filter
+* [users] exported files allow to have formatted date
+
+**Development related**
+* [api] fixed output error log
+* [api] respond 200 on checksum fails to allow process rest of requests
+* [auth_plugins] use member utility
+* [crash_symbols] add a log for errors when testing symbolication server
+* [crash_symbols] added a script to test symbolication server connection
+* [jobs] Relaxing IPC timeout
+* [logs] output version and plugin set on proces start
+* [mongodb] latest driver fixes
+* [scripts] added Centos 8 and Ubuntu 20 support
+* [scripts] removed CentOS 6 support
+* [timezones] updated timezone information
+* [users] allow to query user details by uid and did values in API
+* [users] expose more user properties in user profiles view
+
+## Version 20.11
+
+**Fixes**
+* [api] fixed top 3 percentage distribution
+* [crashes] stop propagation of click on external link
+* [data_migration] more explanatory error messages
+* [events] allow event management for admins
+* [events] make back button work on events changes
+* [frontend] fixed table exports if there is ' or " in text
+* [frontend] remove absolute paths from template
+* [jobs] rescheduling fixes
+* [plugins] fixed regenerating all files on plugin state changes
+* [push] credentials upload fix
+* [push] fixing connections and server selection/access
+* [push] prevent push slider to be opened when no credentials set
+* [star-rating] added safari only styles for sticker
+* [star-rating] feedback popup will reset and be reusable after 10 seconds
+* [star-rating] fixed comments table sort problem
+* [two-factor-auth] fix displaying qr code inside dashboard
+* [views] search by view name not case sensitive
+
+**Enterprise fixes**
+* [attribution] fixed no update button on campaign edit
+* [block] fix event property checks
+* [cohorts] optimize loading cohorts data in overview
+* [crash_symbolication] strip trailing slash from symbolication server url
+* [crashes-jira] fix if app was deleted
+* [dashboards] fixed login out on dashboards email report
+* [flows] improvements, reduce reads, remove unused code, improve pipeline
+* [funnels] make total users period dependent again
+* [systemlogs] prevent multiple requests for the table and ensure using index
+* [users] improve detailed user data loading by separateing network calls and implementing refresh logic
+* [views] fix showing heatmap
+* [views] rename Action map to Heatmap
+
+**Improvements**
+* [alerts] add notification to show if plugin is disabled for specific alerts
+* [alerts] add star rating metric
+* [consolidate] new plugin to duplicate data into multiple apps
+* [core] optimizied core for data ingestion
+* [crashes] add way to get error name for PL Crash reports
+* [crashes] allow selecting crash grouping strategies (default is error and file)
+* [errorlogs] show multiple logs available in logs folder
+* [events] ability to use multiple events as single group on aggregated data
+* [export] stream exporting data instead of calculating in memory and limiting exports
+* [frontend] add device_type data (tablet, phone, desktop, etc)
+* [frontend] added danger zone in user settings for deleting account
+* [frontend] automatically go to last used view in dashboard after login
+* [frontend] improved event blueprint table to be scalable for event count through server side table
+* [frontend] renamed configurations to settings
+* [ip_store] optional plugin to record user ip as custom property
+* [jobs] new view to display job list and their information
+* [push] Huawei PushKit support
+* [push] allow resending failed notifications
+* [push] support for auto messages cancellation when condition is no longer met
+* [report-manager] improving UI between manual and auto reports
+* [report-manager] show latest reports inline in to bar
+* [report-manager] showing errors in the table
+* [reports] allow selecting which events to include in email report
+* [reports] updated email template
+* [sources] add source channel property
+* [two-factor-auth] confirm credentials before two-factor-auth check/setup in login
+
+**Enterprise Improvements**
+* [ab-testing] added ab testing data to user profiles
+* [active_directory] upgraded to new version and improvements
+* [activity-map] show user activity on map for country, region and city levels
+* [attribution] added to email reports
+* [block] allow controling filtering rules via command line
+* [block] new operator support
+* [cohorts] add static date support and more date options
+* [config-transfer] allow transfering configs between apps and servers (like funnels, cohorts, etc)
+* [crash_symbolication] added initial JS source map support
+* [dashboards] separate widget loading
+* [data_manager] transform incoming data
+* [drill] add locale property
+* [drill] added caching to user estimation correction
+* [drill] allow recalculating aggregated data
+* [drill] batched meta generation instead of real time processing
+* [formulas] no bucket option
+* [funnels] add session funnels
+* [oidc] Open ID Connect authentiation support
+* [okta] OKTA authentication support
+* [performance-monitoring] added performance data to user profiles
+* [performance-monitoring] added to email reports
+* [push] personalization for custom properties
+* [remote-config] pre-defined values for remote config
+* [star-rating] add link to user profiles
+* [surveys] allow creating surveys and NPS widgets to collect feedback from your users
+* [users] allow to select which columns to export in User Profiles
+* [users] make segments and segment values searchable and exportable in event timeline
+
+**Development related**
+* [api] add additional metrics to app_users
+* [api] add whitelisting segments for events
+* [api] added first_sync property for server time sync
+* [api] allow timestamps one hour in future
+* [api] api add support for more period formats
+* [api] deal with situation when on /i/bulk passed param requests is not Array
+* [api] don't write to yearly 0 documents when not needed (none-unique values)
+* [api] more events validation, count as number and no sub segments
+* [api] new logic for safe api requests and ACK request only when user merging is finished
+* [api] record more session params for aggregated data
+* [api] removing unused mt property
+* [api] request id concept
+* [api] use fac and lac as seconds timestamp to preserve space
+* [cmd] fix logging of upgrade commands
+* [cohorts][funnels] back to master process
+* [core] Make mail to use configurable "from" for reports
+* [core] remove mongoskin usage
+* [data_migration] fixed compatability with MongodB 4.4+
+* [data_migration] pass result from redirect request to SDK
+* [db] fix service type of mongodb on systemd to prevent interrupt wiredtiger's boot
+* [db] making sure collections are shardable
+* [frontend] automatically load CSS files in the folder
+* [frontend] fix to don't override and merge points in pie chart if moreInfo passed
+* [frontend] remove intercom
+* [frontend] use separate translation files in developer mode
+* [mognodb] add default options and separate mongodb check script (https://c.ly/install/mongodb)
+* [package] latest mongodb driver 3.6+
+* [package] remove time module
+* [plugins] install dependencies first and then run install script
+* [push] always run forks
+* [scripts] output errors on backup/restore
+* [tests] shared db connection
+* [users] add wildcard index for cohorts
+
+## Version 20.04.1
+
+**Fixes**
+* [api] make sure location is string
+* [api] skip empty bulk requests
+* [cmd] fix logging of upgrade commands
+* [configuration] plugin settings in app managament treat number like number
+* [crashes] log bulk error on crash users upsert
+* [dbviewer] fixed projection problem
+* [enterpriseinfo] more space to login area
+* [frontend] fix empty template load in application management
+* [frontend] fixed admins accessing applications section
+* [frontend] fixed error when checking user_of rights
+* [frontend] period parsing fixes
+* [members] maintain backwards compatability for api key validation
+* [plugin-upload] fix file type check
+* [populator] allow providing single digit values as custom user properties in templates
+* [push] fixing unhandled rejection on delete of notification with invalid id
+* [reportmanager] delete long tasks on app delete
+* [server-stats] punchcard comply with rights access
+* [star-rating] fix dialog to work with checksum enabled apps
+* [star-rating] fixed integration popup problem
+* [star-ratings] fixed comments tab sorting problem
+* [systemlogs] fix exports script for new driver version
+* [views] correct localization based on app type
+* [views] fixed incorrect result when searching for specific views
+
+**Enterprise fixes**
+* [ab-testing] fixed user merging logic for ab testing experiments
+* [ab-testing] shallow copy bug fix
+* [attribution] correctly calculating campaign level aggregated data
+* [cohorts] do not crash if cohort does not exist for widget
+* [cohorts] moved back to master process for usage in push campaigns
+* [concurrent_users] handling metric labels overflow
+* [dashboards] fixed double zoom on drill widget period switch
+* [drill] correctly check query type for api parameter
+* [drill] fixed date processing error in some cases
+* [drill] fixed duration formatting for BY queryes and dashboard widgets
+* [drill] fixed recording orientation key
+* [drill] limit line count in graph based on settings color count for BY queries
+* [drill] proper event key escaping/unescaping processing
+* [drill] use BY limit from configuration correctly
+* [flows] use view display name in flow diagram
+* [formulas] correctly regenerate formulas data in report manager
+* [formulas] fixed NaN/no data issue for weekly buckets
+* [funnels] fixed calculating funnel data for past periods
+* [loyalty] fix segmentation filter
+* [performance-monitoring] apm tables sorting fixes
+* [performance-monitoring] fix drill query period
+* [performance-monitoring] tabs navigation bug fix
+* [performance-monitoring] unknown value fix
+* [star-rating] drill icon will only appear on ratings tab
+
+**Improvements**
+* [compare] increased app/event compare limit to 20
+* [db] support for mongodb DNS seed list connection string
+* [frontend] add links to events in event overview
+* [frontend] remove password field when creating users from Global admin
+* [ip_store] store ip address as custom user property (disabled by default)
+* [logger] allow searching for request contents in search field
+* [logger] register data for tokens on top level
+* [logger] register requests with ms precision
+* [performance-monitoring] network response latency overall percentages and breakdown by country
+* [populator] add more template based views with heatmap data for web app type
+* [remote-config] add support for does not contain
+* [reportmanager] display errors in the report manager table 
+
+**Enterprise Improvements**
+* [block] do not require segmentation for blocking events
+* [funnels] display readable stepnames for custom dashboards widgets
+* [users] display search input if any value is provided in it
+* [users] make segments and segment values searchable and exportable in event timeline
+
+**Development related**
+* [api] provide a way to bypass checksum check for programmatic request
+* [cmd] add new plugin creation command
+* [docker] Invalid A/B testing model location for debian
+* [docker] Removing unnecessary plugins
+* [docker] fixed disappearing timzeone
+* [docs] comment fixes and documentation generation stucture
+* [frontend] allow skipping columns from export
+* [plugins] ensure events propagate to all plugins on single plugin failure
+* [scripts] single mongodb installation script (that can be used standalone)
+* [shellcheck] fixes and CI checks
+* [tests] increased timeouts and removed ambigiousness
+
+
+## Version 20.04
 
 **Fixes**
 * [2fa] added white labeling to 2fa qr codes
@@ -13,12 +295,15 @@
 * [UI] fixed single data point not visible
 * [UI] hide menu category if no menu items available
 * [UI] use arrow keys to handle navigation on dropdowns
+* [api] correctly merge array properties for users (not converting them to objects)
 * [api] fixed api side aggregated data user correction in some cases
 * [api] fixed escaping filenames in headers
+* [api] reset period object before getting query time ranges
 * [api] respect city settings when it comes to user 
 * [core] fixes running countly in sub directory
 * [core] improve countly user password change experience
 * [crashes] double dots on y axis for crash/session ratio
+* [crashes] fix closing first thread on refresh
 * [crashes] make sure minidump_stackwalk binary has proper permissions
 * [data-migration] correctly export push credentials and import them
 * [dbviewer] add link to all links instead of javascript view change
@@ -29,7 +314,11 @@
 * [export] fix problems with SSL configuration
 * [frontend] fixed app version sorting in the table
 * [frontend] fixed css for User Loyalty bug
+* [frontend] hide numbers before sparklines loaded
+* [frontend] more space for event names
 * [frontend] properly merge aggregated metrics to fix multiple empty and unknown keys
+* [frontend] resetting graph types when graphs change
+* [jobs] Fixing job start update being made after finish one
 * [push] Fixing multi-select overflow
 * [push] Fixing race when 2 jobs compete for 1 resource
 * [push] Prevent multiple dashboard requests when refresh is faster than the request itself
@@ -51,6 +340,7 @@
 * [security] prevent injection from localiztion key
 * [security] proper setup page validation
 * [security] sending activation link instead of password
+* [security] stricter decoding rules, disable eval, monitor eval usage
 * [security] updated jquery and jquery ui to latest versions
 * [slipping-aways] fixed calculating period bug
 * [star-rating] design fixes
@@ -85,13 +375,18 @@
 * [concurrent_users] removed broken css
 * [crash_symbolication] added file type check on api side for symbol upload process
 * [crash_symbolication] enter press event link to ajaxSubmit method
+* [crash_symbolication] fix error on symbol not found
 * [crash_symbolication] fix undefined values in build list
 * [crash_symboliction] fix symbolication log type and android native command
+* [db] fix $addToSet usage with new MongoDB limitations
 * [drill] event context specific indexes
+* [drill] fix username typo
 * [drill] treat numbers as potential floats
+* [drill] use display names for views in drill
 * [flows] cache event indices
 * [funnels] fixed using cohorts as segmentation in OR steps
 * [groups] add systemlogs
+* [jobs] fix of rescheduling cohorts
 * [remote-config] add systemlogs
 * [restrict] restrict access to manage menu
 * [restrict] updated API/view corelation
@@ -106,21 +401,28 @@
 * [UI] new date picker
 * [active_users] displays MAU, WAU, DAU in Users section
 * [api] record user's device orientation
-* [config] add buttong to test sending email
+* [config] add button to test sending email
 * [core] offline mode config for closed network servers
 * [crashes] add first crash line to crash name in table
 * [crashes] new crash metrics
 * [crashes] revised graph UI
 * [crashes] support for PL Crash reports
+* [dbviewer] can search for collections by hashes too
 * [dbviewer] correctly display ObjectId objects in DBViewer
 * [dbviewer] display indexes of collections
 * [frontend] config for default period selected on dashboard
+* [frontend] enable datatable display count by default
+* [frontend] sort app versions latest version at the top
 * [frontend] zooming controls for graphs
+* [populator] allow creating templates for specific event sets and user properties
 * [populator] populate feedback data
+* [push] Displaying message id in view message
 * [push] rate limiting push sending
 * [reports] job for clearing old autogenerates reports
 * [server-stats] add 3 month period for datapoints
+* [server-stats] add punchcard with hourly metrics
 * [star-rating] added custom theme support for feedback popup
+* [star-rating] allow changing size of the Feedback button
 * [star-rating] display tooltips on emojis
 * [systemlogs] display id of document changed on first level
 * [tokens] job for clearing old unused tokens
@@ -128,11 +430,13 @@
 
 **New Enterprise Features**
 * [UI] change URL on applied query in all views
+* [block] allow new operators as contains in filtering rules
 * [cohorts] new UI with overview and user metrics
 * [cohorts] new bars dashboard widget
 * [cohorts] support for OR steps
 * [crash_symbolication] UI for missing symbols
 * [crash_symbolication] add PL crash support
+* [crash_symbolication] add load address to binary symbols table
 * [drill] add doesn't contain operator
 * [drill] config to disable recording big lists
 * [drill] preaggregated reports for slower queries
@@ -147,6 +451,7 @@
 * [funnels] parallel step processing for faster responses
 * [funnels] show time spent between steps
 * [funnels] support for OR steps
+* [performance-monitoring] new plugin to monitor traces in the app
 * [slipping-away] allow segmenting Slipping away users for EE
 * [star-rating] added to drill and cohorts/funnels steps
 * [users] display more mtea info on user profile page
@@ -168,22 +473,29 @@
 * [core] no need to load js files in javascript directory anymore, they are loaded automatically
 * [core] update for moment construtor warning
 * [db] add log rotation to mongodb in default installation script
+* [db] remove unique constraint on collections that might need sharding
 * [db] removed unused drill index
 * [dep] nodejs version 10
 * [drill] get rid of old meta method
 * [drill] move extend drill view to separate file, to make drill.view.js more readable
 * [drill] record last session id
 * [frontend] added category menu management methods
+* [frontend] common template loader
 * [frontend] i18n do not download properties for locale en, as it is default locale
 * [frontend] log renderCommon failure
 * [frontend] updated os mapping
 * [jobs] cancel all jobs with “schedule” on replace instead of nearest ones
+* [logger] have separate phase for processing after /sdk finished
+* [package] move fs-extra to core packages
 * [package] move grunt and other required libs to dependencies
 * [render] close headless browser incase of errors
+* [rights] manage collection access globally in rights module
 * [scripts] shellcheck for scripts
+* [scripts] update openssl to latest
 * [taskmanager] fallback to gridfs for storing larger data sets
 * [taskmanager] support for sub tasks
 * [vagrant] use 8080 port
+* [version] mark separately db and fs versions and mark them on upgrades and installs
 
 ## Version 19.08.1
 

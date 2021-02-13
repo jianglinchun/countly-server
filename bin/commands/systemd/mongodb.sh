@@ -1,25 +1,13 @@
 #!/bin/bash
 
-ENABLE_MONGOD="yes"
-CONF=/etc/mongod.conf
-DAEMON=/usr/bin/mongod
-DAEMONUSER=${DAEMONUSER:-mongodb}
+NUMACTL_STATUS=0
 
-if [ -f /etc/default/mongod ]; then . /etc/default/mongod; fi
+SERVICE_FILE_PATH=$(systemctl status mongod | grep "loaded" | awk -F';' '{print $1}' | awk -F'(' '{print $2}')
 
-# Handle NUMA access to CPUs (SERVER-3574)
-# This verifies the existence of numactl as well as testing that the command works
-NUMACTL_ARGS="--interleave=all"
-if which numactl >/dev/null 2>/dev/null && numactl "$NUMACTL_ARGS" ls / >/dev/null 2>/dev/null
-then
-  NUMACTL="$(which numactl) -- $NUMACTL_ARGS"
-  DAEMON_OPTS=${DAEMON_OPTS:-"--config $CONF"}
+if [[ $NUMACTL_STATUS -eq 0 ]]; then
+    sed -i "/ExecStart=/c\ExecStart=\/usr\/bin\/mongod --quiet --config \/etc\/mongod.conf" "${SERVICE_FILE_PATH}"
 else
-  NUMACTL=""
-  DAEMON_OPTS="-- "${DAEMON_OPTS:-"--config $CONF"}
+    sed -i "/ExecStart=/c\ExecStart=\/usr\/bin\/numactl --interleave=all \/usr\/bin/mongod --quiet --config \/etc\/mongod.conf" "${SERVICE_FILE_PATH}"
 fi
 
-if [ "x$ENABLE_MONGOD" = "xyes" ]
-then
-  exec start-stop-daemon --start --chuid "$DAEMONUSER" --exec "$NUMACTL" "$DAEMON" "$DAEMON_OPTS"
-fi
+systemctl daemon-reload

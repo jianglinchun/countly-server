@@ -110,7 +110,7 @@ usersApi.getAllUsers = function(params) {
             var membersObj = {};
 
             for (let i = 0; i < members.length; i++) {
-                const result = failedLogins.find(x => (x._id === members[i].username)) || { fails: 0 };
+                const result = failedLogins.find(x => (x._id === JSON.stringify(["login", members[i].username]))) || { fails: 0 };
 
                 if (result.fails > 0 && result.fails % bruteforceFails === 0 && Math.floor(new Date().getTime() / 1000) < (((result.fails / bruteforceFails) * bruteforceWait) + result.lastFail)) {
                     members[i].blocked = true;
@@ -156,7 +156,7 @@ usersApi.resetTimeBan = function(params) {
         return false;
     }
 
-    common.db.collection('failed_logins').remove({_id: params.qstring.username}, (err) => {
+    common.db.collection('failed_logins').remove({_id: JSON.stringify(["login", params.qstring.username])}, (err) => {
         if (err) {
             common.returnMessage(params, 500, 'Remove from collection failed.');
             return false;
@@ -254,7 +254,9 @@ usersApi.createUser = function(params) {
         newMember.email = newMember.email.trim();
 
         common.db.collection('members').insert(newMember, { safe: true }, function(err, member) {
-            member = member.ops;
+            if (!err && member && member.ops) {
+                member = member.ops;
+            }
             if (member && member.length && !err) {
 
                 member[0].api_key = common.md5Hash(member[0]._id + (new Date().getTime()));

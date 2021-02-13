@@ -40,7 +40,8 @@ Status.PAUSED_MIXED = Status.PAUSED_SUCCESS | Status.PAUSED_FAILURE;// 51  Waiti
  */
 const Platform = {
     IOS: 'i',
-    ANDROID: 'a'
+    ANDROID: 'a',
+    HUAWEI: 'h'
 };
 
 const DEFAULT_EXPIRY = 1000 * 60 * 60 * 24 * 7;
@@ -99,6 +100,7 @@ class Note {
         this.autoCapMessages = data.autoCapMessages; // Automated message: limit number of messages per user
         this.autoCapSleep = data.autoCapSleep; // Automated message: how much ms to wait before sending a message
         this.actualDates = data.actualDates; // Automated message: whether to use actual event dates instead of server arrival whenever possible
+        this.autoCancelTrigger = data.autoCancelTrigger; // Automated message: cancel the message when trigger condition is no longer valid
 
         this.result = {
             status: data.result && data.result.status || Status.NotCreated,
@@ -113,7 +115,7 @@ class Note {
             nextbatch: data.result && data.result.nextbatch || null,
         };
 
-        this.expiryDate = data.expiryDate ? parseDate(data.expiryDate) : data.date ? new Date(data.date.getTime() + DEFAULT_EXPIRY) : new Date(Date.now() + DEFAULT_EXPIRY); // one week by default
+        this.expiration = data.expiration || DEFAULT_EXPIRY; // notification expiration in ms relative to sending date, 1 week by default
         this.created = parseDate(data.created) || new Date();
         this.build = data.build;
     }
@@ -161,7 +163,7 @@ class Note {
             media: this.media,
             mediaMime: this.mediaMime,
             result: this.result,
-            expiryDate: this.expiryDate,
+            expiration: this.expiration,
             date: this.date,
             tz: this.tz,
             tx: this.tx,
@@ -175,6 +177,7 @@ class Note {
             autoCapMessages: this.autoCapMessages,
             autoCapSleep: this.autoCapSleep,
             actualDates: this.actualDates,
+            autoCancelTrigger: this.autoCancelTrigger,
             created: this.created,
             test: this.test,
             build: this.build,
@@ -219,7 +222,7 @@ class Note {
                 diff[k] = note[k];
             }
         });
-        ['geos', 'cohorts', 'collapseKey', 'contentAvailable', 'delayWhileIdle', 'url', 'sound', 'badge', 'buttons', 'media', 'mediaMime', 'date', 'tz'].forEach(k => {
+        ['geos', 'cohorts', 'collapseKey', 'contentAvailable', 'delayWhileIdle', 'url', 'sound', 'badge', 'buttons', 'media', 'mediaMime', 'date', 'tz', 'expiration'].forEach(k => {
             if (note[k] !== null && note[k] !== undefined && this[k] !== note[k]) {
                 diff[k] = note[k];
             }
@@ -403,7 +406,7 @@ class Note {
             k = parseInt(k);
             ret = ret.substr(0, k) + (p.c && v ? v.substr(0, 1).toUpperCase() + v.substr(1) : (v || p.f)) + ret.substr(k);
         });
-        return ret;
+        return ret.trim();
     }
 
     /**
@@ -463,9 +466,9 @@ class Note {
             contentAvailable = isset(o.contentAvailable) ? o.contentAvailable : isset(this.contentAvailable) ? this.contentAvailable : null,
             delayWhileIdle = isset(o.delayWhileIdle) ? o.delayWhileIdle : isset(this.delayWhileIdle) ? this.delayWhileIdle : null,
             collapseKey = o.collapseKey || this.collapseKey || null,
-            expiryDate = o.expiryDate || this.expiryDate || null,
+            expiration = o.expiration || this.expiration || null,
             buttonsJSON = buttons > 0 ? new Array(buttons).fill(undefined).map((_, i) => {
-                return {t: mpl[`default${S}${i}${S}t`], l: mpl[`default${S}${i}${S}l`]};
+                return {t: (mpl[`default${S}${i}${S}t`] || '').trim(), l: (mpl[`default${S}${i}${S}l`] || '').trim()};
             }) : null,
             compiled;
 
@@ -546,13 +549,66 @@ class Note {
 
             return JSON.stringify(compiled);
         }
+        else if (platform === Platform.HUAWEI) {
+            let android = {
+                    bi_tag: this.id + '.' + Date.now(),
+                    ttl: '' + ((expiration || DEFAULT_EXPIRY) / 1000)
+                },
+                dt = {};
+
+            if (collapseKey) {
+                android.collapse_key = collapseKey;
+            }
+
+
+            if (alert) {
+                dt.message = alert;
+            }
+            if (title) {
+                dt.title = title;
+            }
+
+            if (sound !== null) {
+                dt.sound = sound;
+            }
+            if (badge !== null) {
+                dt.badge = badge;
+            }
+
+            if (!alert && sound === null) {
+                dt['c.s'] = 'true';
+            }
+
+            if (data) {
+                Object.assign(dt, data);
+            }
+            dt['c.i'] = this._id.toString();
+
+            if (url) {
+                dt['c.l'] = url;
+            }
+
+            if (media && mediaMime && ['image/jpeg', 'image/png'].indexOf(mediaMime) !== -1) {
+                dt['c.m'] = media;
+            }
+
+            if (buttonsJSON) {
+                dt['c.b'] = buttonsJSON;
+            }
+            return JSON.stringify({
+                message: {
+                    android,
+                    data: JSON.stringify(dt)
+                }
+            });
+        }
         else {
             compiled = {};
             if (collapseKey) {
                 compiled.collapse_key = collapseKey;
             }
 
-            compiled.time_to_live = Math.max(600000, Math.round((expiryDate.getTime() - Date.now()) / 1000));
+            compiled.time_to_live = (expiration || DEFAULT_EXPIRY) / 1000;
             if (delayWhileIdle !== null) {
                 compiled.delay_while_idle = delayWhileIdle;
             }
@@ -611,7 +667,7 @@ class Note {
         let ret = {};
         Object.values(this.messagePerLocale || {}).filter(v => typeof v === 'object').forEach(v => {
             Object.values(v).forEach(z => {
-                ret[z.k] = 1;
+                ret[z.k.replace(S, '.')] = 1;
             });
         });
         this._compilationDataFields = JSON.parse(JSON.stringify(ret));
@@ -629,11 +685,12 @@ class Note {
         };
 
         Object.keys(this.compilationDataFields()).forEach(k => {
+
             if (k.indexOf('.') === -1 && typeof user[k] !== 'undefined') {
                 ret[k] = user[k];
             }
             else if (k.indexOf('custom.') !== -1 && user.custom && typeof user.custom[k.substr(7)] !== 'undefined') {
-                ret[k] = user.custom[k.substr(7)];
+                ret[k.replace('.', S)] = user.custom[k.substr(7)];
             }
         });
         return ret;

@@ -53,17 +53,18 @@ run_upgrade (){
     arr=("$@");
     for i in ${1//;/ }
     do
+        DATE=$(date +%Y-%m-%d:%H:%M:%S)
         if [[ $2 == "fs" ]]
         then
             if [ -f "$DIR/../upgrade/$i/upgrade_fs.sh" ]; then
                 if [[ " ${arr[*]} " != *" -y "* ]]; then
                     echo "Upgrading filesystem for $i. y/n?";
-                    read choice;
+                    read -r choice;
                     if [ "$choice" != "y" ]; then
                         continue
                     fi
                 fi
-                bash "$DIR/../upgrade/$i/upgrade_fs.sh" | tee -a "$DIR/../../../log/countly-upgrade-$i-$DATE.log";
+                bash "$DIR/../upgrade/$i/upgrade_fs.sh" | tee -a "$DIR/../../log/countly-upgrade-fs-$i-$DATE.log";
             else
                 echo "No filesystem upgrade script provided for $i";
             fi
@@ -72,12 +73,12 @@ run_upgrade (){
             if [ -f "$DIR/../upgrade/$i/upgrade_db.sh" ]; then
                 if [[ " ${arr[*]} " != *" -y "* ]]; then
                     echo "Upgrading database for $i. y/n?";
-                    read choice;
+                    read -r choice;
                     if [ "$choice" != "y" ]; then
                         continue
                     fi
                 fi
-                bash "$DIR/../upgrade/$i/upgrade_db.sh" | tee -a "$DIR/../../../log/countly-upgrade-$i-$DATE.log";
+                bash "$DIR/../upgrade/$i/upgrade_db.sh" | tee -a "$DIR/../../log/countly-upgrade-db-$i-$DATE.log";
             else
                 echo "No database upgrade script provided for $i";
             fi
@@ -85,12 +86,12 @@ run_upgrade (){
             if [ -f "$DIR/../upgrade/$i/upgrade.sh" ]; then
                 if [[ " ${arr[*]} " != *" -y "* ]]; then
                     echo "Upgrading for $i. y/n?";
-                    read choice;
+                    read -r choice;
                     if [ "$choice" != "y" ]; then
                         continue
                     fi
                 fi
-                bash "$DIR/../upgrade/$i/upgrade.sh" combined 2>&1 | tee -a "$DIR/../../../log/countly-upgrade-$i-$DATE.log";
+                bash "$DIR/../upgrade/$i/upgrade.sh" combined 2>&1 | tee -a "$DIR/../../log/countly-upgrade-$i-$DATE.log";
             else
                 echo "No upgrade script provided for $i";
             fi
@@ -114,7 +115,7 @@ countly_upgrade (){
 
         if [ "$INOFFLINEMODE" == "false" ]
         then
-            (cd $DIR/../..;
+            (cd "$DIR"/../..;
             echo "Installing dependencies...";
             sudo npm install;)
         fi
@@ -127,8 +128,7 @@ countly_upgrade (){
         )
     elif [ "$1" == "auto" ]
     then
-        UPGRADE=$(nodejs "$DIR/../scripts/checking_versions.js");
-        if [ $? -eq 0 ]
+        if UPGRADE=$(nodejs "$DIR/../scripts/checking_versions.js");
         then
             run_upgrade "$UPGRADE" "$2" "$y";
         else
@@ -140,16 +140,20 @@ countly_upgrade (){
         then
             if [ "$2" == "fs" ] || [ "$2" == "db" ]
             then
-                UPGRADE=$(nodejs "$DIR/../scripts/checking_versions.js" "$3" "$4");
+                if UPGRADE=$(nodejs "$DIR/../scripts/checking_versions.js" "$3" "$4")
+                then
+                    run_upgrade "$UPGRADE" "$2" "$y";
+                else
+                    echo "$UPGRADE";
+                fi
             elif [ $# -ge 3 ]
             then
-                UPGRADE=$(nodejs "$DIR/../scripts/checking_versions.js" "$2" "$3");
-            fi
-            if [ $? -eq 0 ]
-            then
-                run_upgrade "$UPGRADE" "$2" "$y";
-            else
-                echo "$UPGRADE";
+                if UPGRADE=$(nodejs "$DIR/../scripts/checking_versions.js" "$2" "$3")
+                then
+                    run_upgrade "$UPGRADE" "$2" "$y";
+                else
+                    echo "$UPGRADE";
+                fi
             fi
         else
             echo "Provide upgrade version in format:";
@@ -188,25 +192,37 @@ countly_upgrade (){
         fi
     elif [ "$1" == "ee" ]
     then
-        if [ -f "$DIR/../../"countly-enterprise-edition*.tar.gz ]; then
-            cp -Rf "$DIR/../../"plugins/plugins.default.json "$DIR/../../"plugins/plugins.ce.json
+        FILE=$(ls -tr "$DIR/../../../"countly-enterprise-edition*.tar.gz 2> /dev/null | tail -1 | awk -F' ' '{print $NF}')
 
-            echo "Extracting Countly Enterprise Edition..."
-            (cd "$DIR/../..";
-            tar xaf countly-enterprise-edition*.tar.gz --strip=1 countly;)
+        if [ -f "$FILE" ]; then
+            tar -zxf "${FILE}" -C /tmp "countly/frontend/express/version.info.js"
+            NEW_VERSION="$(grep -oP 'version:\s*"\K[0-9\.]*' "/tmp/countly/frontend/express/version.info.js")"
+            rm -rf /tmp/countly
 
-            EE_PLUGINS=$(sed 's/\"//g' "$DIR/../../plugins/plugins.ee.json" | sed 's/\[//g' | sed 's/\]//g')
-            CE_PLUGINS=$(sed 's/\"//g' "$DIR/../../plugins/plugins.ce.json" | sed 's/\[//g' | sed 's/\]//g')
-            PLUGINS_DIFF=$(echo " ${EE_PLUGINS}, ${CE_PLUGINS}" | tr ',' '\n' | sort | uniq -u)
-            echo "Enabling plugins..."
-            for plugin in $PLUGINS_DIFF; do
-                countly plugin enable "$plugin"
-            done
+            if [ "$VERSION" == "$NEW_VERSION" ]; then
+                cp -Rf "$DIR/../../"plugins/plugins.default.json "$DIR/../../"plugins/plugins.ce.json
 
-            echo "Upgrading Countly..."
-            countly upgrade
+                echo "Extracting Countly Enterprise Edition..."
+                (cd "$DIR/../../../";
+                tar -zxf "${FILE}";)
+
+                EE_PLUGINS=$(sed 's/\"//g' "$DIR/../../plugins/plugins.ee.json" | sed 's/\[//g' | sed 's/\]//g')
+                CE_PLUGINS=$(sed 's/\"//g' "$DIR/../../plugins/plugins.ce.json" | sed 's/\[//g' | sed 's/\]//g')
+                PLUGINS_DIFF=$(echo " ${EE_PLUGINS}, ${CE_PLUGINS}" | tr ',' '\n' | sort | uniq -u)
+                echo "Enabling plugins..."
+                for plugin in $PLUGINS_DIFF; do
+                    countly plugin enable "$plugin"
+                done
+
+                echo "Upgrading Countly..."
+                countly upgrade
+            else
+                echo "Version mismatch detected! Version of Countly Community Edition should be the same with Enterprise Edition. Please upgrade Countly to  Community Edition v${NEW_VERSION} first."
+                echo "Community Edition v${VERSION}"
+                echo "Enterprise Edition v${NEW_VERSION}"
+            fi
         else
-            echo "Error: Couldn't find any Enterprise Edition package, you should place archive file into '$(cd "$DIR/../.."; pwd;)'"
+            echo "Error: Couldn't find any Enterprise Edition package, you should place archive file into '$(cd "$DIR/../../../"; pwd;)'"
         fi
     elif [ "$1" == "help" ]
     then
@@ -225,6 +241,62 @@ countly_upgrade (){
         echo "    countly upgrade version db <from> <to> [-y]      # run all database upgrade scripts between provided versions";
         echo "    countly upgrade ee                               # upgrade from Community Edition to Enterprise Edition within the same version";
         echo "    countly upgrade help                             # this command";
+    fi
+}
+
+countly_mark_version (){
+    countly_root ;
+    if [ "$1" == "fs" ] || [ "$1" == "db" ]
+    then
+        UPGRADE=$(nodejs "$DIR/../scripts/version_marks.js" write_"$1" "$2");
+    elif [ "$1" == "help" ]
+    then
+        echo "countly mark_version usage:"
+        echo "    countly mark_version fs <version> # upgrades fs version";
+        echo "    countly mark_version db <version> # upgrades db version";
+        echo "    countly mark_version help         # this command";
+    fi
+}
+
+countly_compare_version (){
+    countly_root ;
+    if [ "$1" == "fs" ] || [ "$1" == "db" ]
+    then
+        UPGRADE=$(nodejs "$DIR/../scripts/version_marks.js" compare_"$1" "$2");
+        echo "$UPGRADE";
+    elif [ "$1" == "help" ]
+    then
+        echo "countly compare_version usage:"
+        echo "    countly compare_version fs <version> # compares fs version";
+        echo "    countly compare_version db <version> # compares db version";
+        echo "    countly compare_version help         # this command";
+    fi
+}
+
+countly_check(){
+
+    if [ "$2" == "upgrade" ]
+    then
+        if [ "$1" == "before" ]
+        then
+            VERSION_DIFF=$(countly compare_version "$3" "$4");
+            if [ "$VERSION_DIFF" == "-1" ]
+            then
+                echo "1" #"continue updating"
+            else
+                echo "0" #"up to date"
+            fi
+        elif [ "$1" == "after" ]
+        then
+            countly mark_version "$3" "$4";
+        fi
+    elif [ "$2" == "install" ]
+    then
+        if [ "$1" == "after" ]
+        then
+            countly mark_version fs "$VERSION";
+            countly mark_version db "$VERSION";
+        fi
     fi
 }
 
@@ -282,7 +354,7 @@ countly_backupfiles (){
         cp -a "$DIR/../../frontend/express/certificates/." files/frontend/express/certificates/
     fi
 
-    for d in $DIR/../../plugins/*; do
+    for d in "$DIR"/../../plugins/*; do
         PLUGIN="$(basename "$d")";
         if [ -f "$d/config.js" ]; then
             mkdir -p "files/plugins/$PLUGIN" ;
@@ -311,11 +383,35 @@ countly_backupdb (){
     echo "Backing up mongodb...";
     shift
     #allow passing custom flags
-    connection=( $(node "$DIR/scripts/db.conf.js")  "${@}" );
-    mongodump "${connection[@]}" --db countly > /dev/null;
-    mongodump "${connection[@]}" --db countly_drill > /dev/null;
-    mongodump "${connection[@]}" --db countly_fs > /dev/null;
-    mongodump "${connection[@]}" --db countly_out > /dev/null;
+    IFS=" " read -r -a con <<< "$(node "$DIR/scripts/db.conf.js")"
+    connection=( "${con[@]}"  "${@}" );
+    STATUS=0
+
+    mongodump "${connection[@]}" --db countly 2>&1 | tee "$DIR/../../log/countly-backup-$DATE.log";
+    if [ "${PIPESTATUS[0]}" -ne 0 ]
+    then
+        STATUS=1
+    fi
+
+    mongodump "${connection[@]}" --db countly_drill 2>&1 | tee -a "$DIR/../../log/countly-backup-$DATE.log";
+    if [ "${PIPESTATUS[0]}" -ne 0 ]
+    then
+        STATUS=1
+    fi
+
+    mongodump "${connection[@]}" --db countly_fs 2>&1 | tee -a "$DIR/../../log/countly-backup-$DATE.log";
+    if [ "${PIPESTATUS[0]}" -ne 0 ]
+    then
+        STATUS=1
+    fi
+
+    mongodump "${connection[@]}" --db countly_out 2>&1 | tee -a "$DIR/../../log/countly-backup-$DATE.log";
+    if [ "${PIPESTATUS[0]}" -ne 0 ]
+    then
+        STATUS=1
+    fi
+
+    exit $STATUS;
     )
 }
 
@@ -354,7 +450,7 @@ countly_save (){
 
         if [ "$files" -gt 0 ]
         then
-            for d in $2/*; do
+            for d in "$2"/*; do
                 diff=$(diff "$1" "$d" | wc -l)
                 if [ "$diff" == 0 ]
                 then
@@ -433,8 +529,6 @@ countly_restorefiles (){
             fi
         done
         )
-        echo "Restarting Countly...";
-        countly restart;
     else
         echo "No files to restore from";
     fi
@@ -446,35 +540,58 @@ countly_restoredb (){
         echo "Please provide path" ;
         return 0;
     fi
+    CLY_EXPORT_PATH=$1
     shift
     #allow passing custom flags
-    connection=( $(node "$DIR/scripts/db.conf.js")  "${@}" );
-    if [ -d "$1/dump/countly" ]; then
+    IFS=" " read -r -a con <<< "$(node "$DIR/scripts/db.conf.js")"
+    connection=( "${con[@]}"  "${@}" );
+    STATUS=0
+
+    if [ -d "$CLY_EXPORT_PATH/dump/countly" ]; then
         echo "Restoring countly database...";
-        mongorestore "${connection[@]}" --db countly --batchSize=10 "$1/dump/countly" > /dev/null;
+        mongorestore "${connection[@]}" --db countly --batchSize=10 "$CLY_EXPORT_PATH/dump/countly" 2>&1 | tee "$DIR/../../log/countly-restore-$DATE.log";
+        if [ "${PIPESTATUS[0]}" -ne 0 ]
+        then
+            STATUS=1
+        fi
     else
         echo "No countly database dump to restore from";
     fi
-    if [ -d "$1/dump/countly_drill" ]; then
+
+    if [ -d "$CLY_EXPORT_PATH/dump/countly_drill" ]; then
         echo "Restoring countly_drill database...";
-        mongorestore "${connection[@]}" --db countly_drill --batchSize=10 "$1/dump/countly_drill" > /dev/null;
+        mongorestore "${connection[@]}" --db countly_drill --batchSize=10 "$CLY_EXPORT_PATH/dump/countly_drill" 2>&1 | tee -a "$DIR/../../log/countly-restore-$DATE.log";
+        if [ "${PIPESTATUS[0]}" -ne 0 ]
+        then
+            STATUS=1
+        fi
     else
         echo "No countly_drill database dump to restore from";
     fi
-    
-    if [ -d "$1/dump/countly_fs" ]; then
+
+    if [ -d "$CLY_EXPORT_PATH/dump/countly_fs" ]; then
         echo "Restoring countly_fs database...";
-        mongorestore "${connection[@]}" --db countly_fs --batchSize=10 "$1/dump/countly_fs" > /dev/null;
+        mongorestore "${connection[@]}" --db countly_fs --batchSize=10 "$CLY_EXPORT_PATH/dump/countly_fs" 2>&1 | tee -a "$DIR/../../log/countly-restore-$DATE.log";
+        if [ "${PIPESTATUS[0]}" -ne 0 ]
+        then
+            STATUS=1
+        fi
     else
         echo "No countly_fs database dump to restore from";
     fi
-    
-    if [ -d "$1/dump/countly_out" ]; then
+
+    if [ -d "$CLY_EXPORT_PATH/dump/countly_out" ]; then
         echo "Restoring countly_out database...";
-        mongorestore "${connection[@]}" --db countly_out --batchSize=10 "$1/dump/countly_out" > /dev/null;
+        mongorestore "${connection[@]}" --db countly_out --batchSize=10 "$CLY_EXPORT_PATH/dump/countly_out" 2>&1 | tee -a "$DIR/../../log/countly-restore-$DATE.log";
+        if [ "${PIPESTATUS[0]}" -ne 0 ]
+        then
+            STATUS=1
+        fi
     else
         echo "No countly_out database dump to restore from";
     fi
+
+    exit $STATUS;
 }
 
 countly_restore (){
@@ -487,13 +604,8 @@ countly_restore (){
     countly_restoredb "$@";
 }
 
-countly_thp (){
-    cp -f "$DIR/../scripts/disable-transparent-hugepages" /etc/init.d/disable-transparent-hugepages
-    chmod 755 /etc/init.d/disable-transparent-hugepages
-    update-rc.d disable-transparent-hugepages defaults
-}
-
 #load real platform/init sys file to overwrite stubs
+# shellcheck source=/dev/null
 source "$DIR/enabled/countly.sh"
 
 #process command
@@ -516,6 +628,12 @@ elif [ -d "$DIR/../../plugins/$NAME" ] && [ -f "$DIR/../../plugins/$NAME/scripts
     shift;
     shift;
     nodejs "$DIR/../../plugins/$NAME/scripts/$SCRIPT.js" "$@";
+elif [ -d "$DIR/../../plugins/$NAME" ] && [ -f "$DIR/../../plugins/$NAME/scripts/$NAME.sh" ]; then
+    shift;
+    bash "$DIR/../../plugins/$NAME/scripts/$NAME.sh" "$@";
+elif [ -d "$DIR/../../plugins/$NAME" ] && [ -f "$DIR/../../plugins/$NAME/scripts/$NAME.js" ]; then
+    shift;
+    nodejs "$DIR/../../plugins/$NAME/scripts/$NAME.js" "$@";
 else
     echo "";
     echo "countly usage:";
@@ -527,6 +645,8 @@ else
     echo "    countly dir     # outputs countly install directory";
     echo "    countly test    # run countly tests";
     echo "    countly usage   # prints this out, but so as basically everything else does";
+    echo "    countly mark_version # updates current version info (for db and fs, separately)"
+    echo "    countly compare_version # compares given version to installed version, returns 1 if installed is new (for db and fs, separately)"
     echo "    countly backupfiles path/to/backup # backups countly user/config files";
     echo "    countly backupdb path/to/backup # backups countly database";
     echo "    countly backup path/to/backup # backups countly db and user/config files";
@@ -539,5 +659,6 @@ else
     countly update ;
     countly config ;
     countly upgrade help ;
+    countly block ;
     echo "";
 fi

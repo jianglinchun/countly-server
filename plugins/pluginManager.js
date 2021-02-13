@@ -1,11 +1,15 @@
-var plugins = require('./plugins.json', 'dont-enclose'),
+var pluginDependencies = require('./pluginDependencies.js'),
+    path = require('path'),
+    plugins = pluginDependencies.getFixedPluginList(require('./plugins.json', 'dont-enclose'), {
+        "discoveryStrategy": "disableChildren",
+        "overwrite": path.resolve(__dirname, './plugins.json')
+    }),
     pluginsApis = {},
-    mongo = require('mongoskin'),
+    mongodb = require('mongodb'),
     cluster = require('cluster'),
     countlyConfig = require('../frontend/express/config', 'dont-enclose'),
     utils = require('../api/utils/utils.js'),
     fs = require('fs'),
-    path = require('path'),
     url = require('url'),
     querystring = require('querystring'),
     cp = require('child_process'),
@@ -32,6 +36,7 @@ var pluginManager = function pluginManager() {
     var configsOnchanges = {};
     var excludeFromUI = {plugins: true};
     var finishedSyncing = true;
+    var expireList = [];
 
     /**
      *  Registered app types
@@ -54,7 +59,8 @@ var pluginManager = function pluginManager() {
      */
     this.dbConfigFiles = {
         countly_drill: "./drill/config.js",
-        countly_out: "../api/configs/config.db_out.js"
+        countly_out: "../api/configs/config.db_out.js",
+        countly_fs: "../api/configs/config.db_fs.js"
     };
 
     /**
@@ -123,6 +129,22 @@ var pluginManager = function pluginManager() {
         if (onchange) {
             configsOnchanges[namespace] = onchange;
         }
+    };
+
+    /**
+     * Add collection to expire list
+     * @param {string} collection - collection name
+     **/
+    this.addCollectionToExpireList = function(collection) {
+        expireList.push(collection);
+    };
+
+    /**
+     * Get expire list array
+     * @returns {array} expireList - expireList array that created from plugins
+     **/
+    this.getExpireList = function() {
+        return expireList;
     };
 
     /**
@@ -413,12 +435,26 @@ var pluginManager = function pluginManager() {
     * Register listening to new event on api side
     * @param {string} event - event to listen to
     * @param {function} callback - function to call, when event happens
+    * @param {boolean} unshift - whether to register a high-priority callback (unshift it to the listeners array)
     **/
-    this.register = function(event, callback) {
+    this.register = function(event, callback, unshift = false) {
         if (!events[event]) {
             events[event] = [];
         }
-        events[event].push(callback);
+        events[event][unshift ? 'unshift' : 'push'](callback);
+    };
+
+    // TODO: Remove this function and all it calls when moving to Node 12.
+    var promiseAllSettledBluebirdToStandard = function(bluebirdResults) {
+        return bluebirdResults.map((bluebirdResult) => {
+            const isFulfilled = bluebirdResult.isFulfilled();
+
+            const status = isFulfilled ? 'fulfilled' : 'rejected';
+            const value = isFulfilled ? bluebirdResult.value() : undefined;
+            const reason = isFulfilled ? undefined : bluebirdResult.reason();
+
+            return { status, value, reason };
+        });
     };
 
     /**
@@ -435,7 +471,13 @@ var pluginManager = function pluginManager() {
         if (events[event]) {
             try {
                 for (let i = 0, l = events[event].length; i < l; i++) {
-                    promise = events[event][i].call(null, params);
+                    try {
+                        promise = events[event][i].call(null, params);
+                    }
+                    catch (error) {
+                        promise = Promise.reject(error);
+                        console.error(error.stack);
+                    }
                     if (promise) {
                         used = true;
                     }
@@ -445,36 +487,21 @@ var pluginManager = function pluginManager() {
             catch (ex) {
                 console.error(ex.stack);
             }
+
             //should we create a promise for this dispatch
             if (params && params.params && params.params.promises) {
                 params.params.promises.push(new Promise(function(resolve) {
                     Promise.allSettled(promises).then(function(results) {
-                        results = results.map(function(result) {
-                            if (result.isRejected()) {
-                                console.log(result.reason());
-                            }
-                            else {
-                                return result.value();
-                            }
-                        });
                         resolve();
                         if (callback) {
-                            callback(null, results);
+                            callback(null, promiseAllSettledBluebirdToStandard(results));
                         }
                     });
                 }));
             }
             else if (callback) {
                 Promise.allSettled(promises).then(function(results) {
-                    results = results.map(function(result) {
-                        if (result.isRejected()) {
-                            console.log(result.reason());
-                        }
-                        else {
-                            return result.value();
-                        }
-                    });
-                    callback(null, results);
+                    callback(null, promiseAllSettledBluebirdToStandard(results));
                 });
             }
         }
@@ -607,7 +634,10 @@ var pluginManager = function pluginManager() {
     **/
     this.reloadPlugins = function() {
         delete require.cache[require.resolve('./plugins.json', 'dont-enclose')];
-        plugins = require('./plugins.json', 'dont-enclose');
+        plugins = pluginDependencies.getFixedPluginList(require('./plugins.json', 'dont-enclose'), {
+            "discoveryStrategy": "disableChildren",
+            "overwrite": path.resolve(__dirname, './plugins.json')
+        });
     };
 
     /**
@@ -629,15 +659,16 @@ var pluginManager = function pluginManager() {
         var self = this;
         if (finishedSyncing) {
             finishedSyncing = false;
-            var db = self.dbConnection();
-            db.collection("plugins").findOne({_id: "plugins"}, function(err, res) {
-                if (!err) {
-                    configs = res;
-                    self.checkPlugins(db, function() {
-                        db.close();
-                        finishedSyncing = true;
-                    });
-                }
+            self.dbConnection().then((db) => {
+                db.collection("plugins").findOne({_id: "plugins"}, function(err, res) {
+                    if (!err) {
+                        configs = res;
+                        self.checkPlugins(db, function() {
+                            db.close();
+                            finishedSyncing = true;
+                        });
+                    }
+                });
             });
         }
     };
@@ -780,28 +811,12 @@ var pluginManager = function pluginManager() {
         var self = this;
         console.log('Installing plugin %j...', plugin);
         callback = callback || function() {};
-        var scriptPath = path.join(__dirname, plugin, 'install.js');
         var errors = false;
-        var m = cp.spawn("nodejs", [scriptPath]);
 
-        m.stdout.on('data', (data) => {
-            console.log(data.toString());
-        });
-
-        m.stderr.on('data', (data) => {
-            console.log(data.toString());
-        });
-
-        m.on('close', (code) => {
-            console.log('Done running install.js with %j', code);
-            if (parseInt(code, 10) !== 0) {
-                errors = true;
-                return callback(errors);
-            }
-
+        new Promise(function(resolve) {
             var eplugin = global.enclose ? global.enclose.plugins[plugin] : null;
             if (eplugin && eplugin.prepackaged) {
-                return callback(errors);
+                return resolve(errors);
             }
             var cwd = eplugin ? eplugin.rfs : path.join(__dirname, plugin);
             if (!self.getConfig("api").offline_mode) {
@@ -810,15 +825,33 @@ var pluginManager = function pluginManager() {
                         errors = true;
                         console.log('error: %j', error2);
                     }
-                    console.log('Done installing plugin %j', plugin);
-                    callback(errors);
+                    console.log('Done running npm install %j', plugin);
+                    resolve(errors);
                 });
             }
             else {
-                errors = true;
-                callback(errors);
+                resolve(errors);
                 console.log('Server is in offline mode, this command cannot be run. %j');
             }
+        }).then(function(result) {
+            var scriptPath = path.join(__dirname, plugin, 'install.js');
+            var m = cp.spawn("nodejs", [scriptPath]);
+
+            m.stdout.on('data', (data) => {
+                console.log(data.toString());
+            });
+
+            m.stderr.on('data', (data) => {
+                console.log(data.toString());
+            });
+
+            m.on('close', (code) => {
+                console.log('Done installing plugin %j', code);
+                if (parseInt(code, 10) !== 0) {
+                    errors = true;
+                }
+                callback(errors || result);
+            });
         });
     };
 
@@ -832,28 +865,12 @@ var pluginManager = function pluginManager() {
         var self = this;
         console.log('Upgrading plugin %j...', plugin);
         callback = callback || function() {};
-        var scriptPath = path.join(__dirname, plugin, 'install.js');
         var errors = false;
-        var m = cp.spawn("nodejs", [scriptPath]);
 
-        m.stdout.on('data', (data) => {
-            console.log(data.toString());
-        });
-
-        m.stderr.on('data', (data) => {
-            console.log(data.toString());
-        });
-
-        m.on('close', (code) => {
-            console.log('Done running install.js with %j', code);
-            if (parseInt(code, 10) !== 0) {
-                errors = true;
-                return callback(errors);
-            }
-
+        new Promise(function(resolve) {
             var eplugin = global.enclose ? global.enclose.plugins[plugin] : null;
             if (eplugin && eplugin.prepackaged) {
-                return callback(errors);
+                return resolve(errors);
             }
             var cwd = eplugin ? eplugin.rfs : path.join(__dirname, plugin);
             if (!self.getConfig("api").offline_mode) {
@@ -862,15 +879,33 @@ var pluginManager = function pluginManager() {
                         errors = true;
                         console.log('error: %j', error2);
                     }
-                    console.log('Done upgrading plugin %j', plugin);
-                    callback(errors);
+                    console.log('Done running npm update with %j', plugin);
+                    resolve(errors);
                 });
             }
             else {
-                errors = true;
-                callback(errors);
+                resolve(errors);
                 console.log('Server is in offline mode, this command cannot be run. %j');
             }
+        }).then(function(result) {
+            var scriptPath = path.join(__dirname, plugin, 'install.js');
+            var m = cp.spawn("nodejs", [scriptPath]);
+
+            m.stdout.on('data', (data) => {
+                console.log(data.toString());
+            });
+
+            m.stderr.on('data', (data) => {
+                console.log(data.toString());
+            });
+
+            m.on('close', (code) => {
+                console.log('Done upgrading plugin %j', code);
+                if (parseInt(code, 10) !== 0) {
+                    errors = true;
+                }
+                callback(errors || result);
+            });
         });
     };
 
@@ -910,7 +945,7 @@ var pluginManager = function pluginManager() {
     **/
     this.prepareProduction = function(callback) {
         console.log('Preparing production files');
-        exec('countly task locales', {cwd: path.dirname(process.argv[1])}, function(error, stdout) {
+        exec('countly task dist-all', {cwd: path.dirname(process.argv[1])}, function(error, stdout) {
             console.log('Done preparing production files with %j / %j', error, stdout);
             var errors;
             if (error && error !== 'Error: Command failed: ') {
@@ -1080,12 +1115,30 @@ var pluginManager = function pluginManager() {
         return str;
     };
 
+    this.connectToAllDatabases = async() => {
+        let dbs = ['countly', 'countly_out', 'countly_fs'];
+        if (this.isPluginEnabled('drill')) {
+            dbs.push('countly_drill');
+        }
+
+        const databases = await Promise.all(dbs.map(this.dbConnection.bind(this)));
+        const [dbCountly, dbOut, dbFs, dbDrill] = databases;
+
+        let common = require('../api/utils/common');
+        common.db = dbCountly;
+        common.outDb = dbOut;
+        require('../api/utils/countlyFs').setHandler(dbFs);
+        common.drillDb = dbDrill;
+
+        return databases;
+    };
+
     /**
     * Get database connection with configured pool size
     * @param {object} config - connection configs
     * @returns {object} db connection params
     **/
-    this.dbConnection = function(config) {
+    this.dbConnection = async function(config) {
         var db, maxPoolSize = 10;
         var mngr = this;
 
@@ -1093,7 +1146,7 @@ var pluginManager = function pluginManager() {
             //we are in worker
             maxPoolSize = 100;
         }
-        if (process.argv[1].endsWith('executor.js')) {
+        if (process.argv[1] && process.argv[1].endsWith('executor.js')) {
             maxPoolSize = 3;
         }
         if (typeof config === "string") {
@@ -1131,14 +1184,19 @@ var pluginManager = function pluginManager() {
         var dbName;
         var dbOptions = {
             poolSize: maxPoolSize,
+            maxPoolSize: maxPoolSize,
             noDelay: true,
             keepAlive: true,
             keepAliveInitialDelay: 30000,
             connectTimeoutMS: 999999999,
             socketTimeoutMS: 999999999,
+            serverSelectionTimeoutMS: 999999999,
+            maxIdleTimeMS: 0,
+            waitQueueTimeoutMS: 0,
             useNewUrlParser: true,
             useUnifiedTopology: true,
-            auto_reconnect: true
+            auto_reconnect: true,
+            w: 1
         };
         if (typeof config.mongodb === 'string') {
             dbName = this.replaceDatabaseString(config.mongodb, db);
@@ -1169,9 +1227,18 @@ var pluginManager = function pluginManager() {
             dbName = encodeURIComponent(config.mongodb.username) + ":" + encodeURIComponent(utils.decrypt(config.mongodb.password)) + "@" + dbName;
         }
 
-        if (dbName.indexOf('mongodb://') !== 0) {
+        if (dbName.indexOf('mongodb://') !== 0 && dbName.indexOf('mongodb+srv://') !== 0) {
             dbName = 'mongodb://' + dbName;
         }
+        if (dbName.indexOf('retryWrites') === -1) {
+            if (dbName.indexOf('?') === -1) {
+                dbName = dbName + "?retryWrites=false";
+            }
+            else {
+                dbName = dbName + "&retryWrites=false";
+            }
+        }
+
         var db_name = "countly";
         try {
             db_name = dbName.split("/").pop().split("?")[0];
@@ -1192,20 +1259,52 @@ var pluginManager = function pluginManager() {
             connection: dbName,
             options: dbOptions
         });
+        const client = new mongodb.MongoClient(dbName, dbOptions);
+        try {
+            await client.connect();
+        }
+        catch (ex) {
+            logDbRead.e("Error connecting to database", ex);
+            //exit to retry to reconnect on restart
+            process.exit(1);
+            return;
+        }
 
-        var countlyDb = mongo.db(dbName, dbOptions);
+        client._db = client.db;
+
+        client.db = function(database, options) {
+            return mngr.wrapDatabase(client._db(database, options), client, db_name, dbName, dbOptions);
+        };
+        return client.db(db_name);
+    };
+
+    /**
+     *  Wrap db object with our compatability layer
+     *  @param {Db} countlyDb - database connection
+     *  @param {MongoClient} client - database client connection
+     *  @param {string} dbName - database name
+     *  @param {string} dbConnectionString - database connection string
+     *  @param {Object} dbOptions - database connection options
+     *  @returns {Db} wrapped database connection
+     */
+    this.wrapDatabase = function(countlyDb, client, dbName, dbConnectionString, dbOptions) {
+        if (countlyDb._wrapped) {
+            return countlyDb;
+        }
+
+        countlyDb._wrapped = true;
+        var mngr = this;
         countlyDb._cly_debug = {
-            db: db_name,
-            connection: dbName,
+            db: dbName,
+            connection: dbConnectionString,
             options: dbOptions
         };
 
         logDbRead.d("New connection %j", countlyDb._cly_debug);
-        countlyDb._emitter.setMaxListeners(0);
         if (!countlyDb.ObjectID) {
             countlyDb.ObjectID = function(id) {
                 try {
-                    return mongo.ObjectID(id);
+                    return mongodb.ObjectID(id);
                 }
                 catch (ex) {
                     logDbRead.i("Incorrect Object ID %j", ex);
@@ -1222,23 +1321,16 @@ var pluginManager = function pluginManager() {
         };
         countlyDb.on('error', console.log);
         countlyDb.onOpened = function(callback) {
-            if (countlyDb.isOpen()) {
-                callback();
-            }
-            else {
-                countlyDb._emitter.once('open', function() {
-                    callback();
-                });
-            }
+            callback();
         };
-
-        countlyDb.onOpened(function() {
-            mngr.dispatch("/db/connected", {
-                db: db_name,
-                instance: countlyDb,
-                connection: dbName,
-                options: dbOptions
-            });
+        countlyDb._native = countlyDb;
+        countlyDb.client = client;
+        countlyDb.close = client.close.bind(client);
+        mngr.dispatch("/db/connected", {
+            db: dbName,
+            instance: countlyDb,
+            connection: dbConnectionString,
+            options: dbOptions
         });
 
         countlyDb.admin().buildInfo({}, (err, result) => {
@@ -1249,7 +1341,6 @@ var pluginManager = function pluginManager() {
 
         var findOptions = ["limit", "sort", "projection", "skip", "hint", "explain", "snapshot", "timeout", "tailable", "batchSize", "returnKey", "maxScan", "min", "max", "showDiskLoc", "comment", "raw", "promoteLongs", "promoteValues", "promoteBuffers", "readPreference", "partial", "maxTimeMS", "collation", "session"];
 
-        countlyDb.s = {};
         countlyDb._collection_cache = {};
         //overwrite some methods
         countlyDb._collection = countlyDb.collection;
@@ -1274,11 +1365,36 @@ var pluginManager = function pluginManager() {
                 return data;
             }
 
+            /**
+             *  Method to log promise errors
+             *  @param {Promise} promise - Promise object
+             *  @param {Error} e - Error for tracing
+             *  @param {Object} data - arguments and calling method
+             *  @returns {Promise} Promise to handle
+             */
+            function handlePromiseErrors(promise, e, data) {
+                if (promise && promise.then) {
+                    return promise.catch(function(err) {
+                        logDbWrite.e("Error in promise from " + collection + " %j %s %j", data, err, err);
+                        logDbWrite.d("From connection %j", countlyDb._cly_debug);
+                        if (e) {
+                            logDbWrite.e(e.stack);
+                        }
+                        throw err;
+                    });
+                }
+                return promise;
+            }
+
             //get original collection object
             var ob = this._collection(collection, opts, done);
 
             //overwrite with retry policy
             var retryifNeeded = function(callback, retry, e, data) {
+                //we cannot enforce callback, to make it return promise
+                if (!callback) {
+                    return;
+                }
                 return function(err, res) {
                     if (err) {
                         if (retry && err.code === 11000) {
@@ -1298,9 +1414,6 @@ var pluginManager = function pluginManager() {
                                 if (callback) {
                                     callback(err, res);
                                 }
-                                else {
-                                    logDbWrite.d("Without Callback");
-                                }
                             }
                         }
                         else {
@@ -1314,16 +1427,10 @@ var pluginManager = function pluginManager() {
                             if (callback) {
                                 callback(err, res);
                             }
-                            else {
-                                logDbWrite.d("Without Callback");
-                            }
                         }
                     }
                     else if (callback) {
                         callback(err, res);
-                    }
-                    else {
-                        logDbWrite.d("Without Callback");
                     }
                 };
             };
@@ -1339,7 +1446,7 @@ var pluginManager = function pluginManager() {
                 }
 
                 mngr.dispatch("/db/readAndUpdate", {
-                    db: db_name,
+                    db: dbName,
                     operation: "findAndModify",
                     collection: collection,
                     query: query,
@@ -1360,14 +1467,14 @@ var pluginManager = function pluginManager() {
                 if (options.upsert) {
                     var self = this;
 
-                    return this._findAndModify(query, sort, doc, options, retryifNeeded(callback, function() {
+                    return handlePromiseErrors(this._findAndModify(query, sort, doc, options, retryifNeeded(callback, function() {
                         logDbWrite.d("retrying findAndModify " + collection + " %j %j %j %j" + at, query, sort, doc, options);
                         logDbWrite.d("From connection %j", countlyDb._cly_debug);
                         self._findAndModify(query, sort, doc, options, retryifNeeded(callback, null, e, copyArguments(args, "findAndModify")));
-                    }, e, copyArguments(arguments, "findAndModify")));
+                    }, e, copyArguments(arguments, "findAndModify"))), e, copyArguments(arguments, "findAndModify"));
                 }
                 else {
-                    return this._findAndModify(query, sort, doc, options, retryifNeeded(callback, null, e, copyArguments(arguments, "findAndModify")));
+                    return handlePromiseErrors(this._findAndModify(query, sort, doc, options, retryifNeeded(callback, null, e, copyArguments(arguments, "findAndModify"))), e, copyArguments(arguments, "findAndModify"));
                 }
             };
 
@@ -1383,7 +1490,7 @@ var pluginManager = function pluginManager() {
                     }
 
                     mngr.dispatch("/db/update", {
-                        db: db_name,
+                        db: dbName,
                         operation: name,
                         collection: collection,
                         query: selector,
@@ -1403,14 +1510,14 @@ var pluginManager = function pluginManager() {
                     if (options.upsert) {
                         var self = this;
 
-                        return this["_" + name](selector, doc, options, retryifNeeded(callback, function() {
+                        return handlePromiseErrors(this["_" + name](selector, doc, options, retryifNeeded(callback, function() {
                             logDbWrite.d("retrying " + name + " " + collection + " %j %j %j" + at, selector, doc, options);
                             logDbWrite.d("From connection %j", countlyDb._cly_debug);
                             self["_" + name](selector, doc, options, retryifNeeded(callback, null, e, copyArguments(args, name)));
-                        }, e, copyArguments(arguments, name)));
+                        }, e, copyArguments(arguments, name))), e, copyArguments(arguments, name));
                     }
                     else {
-                        return this["_" + name](selector, doc, options, retryifNeeded(callback, null, e, copyArguments(arguments, name)));
+                        return handlePromiseErrors(this["_" + name](selector, doc, options, retryifNeeded(callback, null, e, copyArguments(arguments, name))), e, copyArguments(arguments, name));
                     }
                 };
             };
@@ -1423,6 +1530,10 @@ var pluginManager = function pluginManager() {
 
             //overwrite with write logging
             var logForWrites = function(callback, e, data) {
+                //we cannot enforce callback, to make it return promise
+                if (!callback) {
+                    return;
+                }
                 return function(err, res) {
                     if (err) {
                         if (!(data.args && data.args[1] && data.args[1].ignore_errors && data.args[1].ignore_errors.indexOf(err.code) !== -1)) {
@@ -1450,12 +1561,6 @@ var pluginManager = function pluginManager() {
                     if (callback) {
                         callback(err, res);
                     }
-                    else {
-                        logDbWrite.d("Without Callback");
-                        /*if (e) {
-                            logDbWrite.e(e.stack);
-                        }*/
-                    }
                 };
             };
 
@@ -1471,7 +1576,7 @@ var pluginManager = function pluginManager() {
                     }
 
                     mngr.dispatch("/db/write", {
-                        db: db_name,
+                        db: dbName,
                         operation: name,
                         collection: collection,
                         query: selector,
@@ -1486,7 +1591,7 @@ var pluginManager = function pluginManager() {
 
                     logDbWrite.d(name + " " + collection + " %j %j" + at, selector, options);
                     logDbWrite.d("From connection %j", countlyDb._cly_debug);
-                    return this["_" + name](selector, options, logForWrites(callback, e, copyArguments(arguments, name)));
+                    return handlePromiseErrors(this["_" + name](selector, options, logForWrites(callback, e, copyArguments(arguments, name))), e, copyArguments(arguments, name));
                 };
             };
             overwriteDefaultWrite(ob, "deleteOne");
@@ -1497,6 +1602,10 @@ var pluginManager = function pluginManager() {
 
             //overwrite with read logging
             var logForReads = function(callback, e, data) {
+                //we cannot enforce callback, to make it return promise
+                if (!callback) {
+                    return;
+                }
                 return function(err, res) {
                     if (err) {
                         logDbRead.e("Error reading " + collection + " %j %s %j", data, err, err);
@@ -1521,9 +1630,6 @@ var pluginManager = function pluginManager() {
                             callback(err, res);
                         }
                     }
-                    else {
-                        logDbRead.d("Without Callback");
-                    }
                 };
             };
 
@@ -1539,7 +1645,7 @@ var pluginManager = function pluginManager() {
                     }
 
                     mngr.dispatch("/db/read", {
-                        db: db_name,
+                        db: dbName,
                         operation: name,
                         collection: collection,
                         query: query,
@@ -1564,7 +1670,7 @@ var pluginManager = function pluginManager() {
                     }
                     logDbRead.d(name + " " + collection + " %j %j" + at, query, options);
                     logDbRead.d("From connection %j", countlyDb._cly_debug);
-                    return this["_" + name](query, options, logForReads(callback, e, copyArguments(arguments, name)));
+                    return handlePromiseErrors(this["_" + name](query, options, logForReads(callback, e, copyArguments(arguments, name))), e, copyArguments(arguments, name));
                 };
             };
 
@@ -1591,7 +1697,7 @@ var pluginManager = function pluginManager() {
                     options = options || {};
                 }
                 mngr.dispatch("/db/read", {
-                    db: db_name,
+                    db: dbName,
                     operation: "find",
                     collection: collection,
                     query: query,
@@ -1606,7 +1712,7 @@ var pluginManager = function pluginManager() {
                 var cursor = this._find(query, options);
                 cursor._toArray = cursor.toArray;
                 cursor.toArray = function(callback) {
-                    cursor._toArray(logForReads(callback, e, copyArguments(args, "find")));
+                    return handlePromiseErrors(cursor._toArray(logForReads(callback, e, copyArguments(args, "find"))), e, copyArguments(arguments, "find"));
                 };
                 return cursor;
             };

@@ -33,7 +33,7 @@ fi
 
 #add node.js repo
 #echo | apt-add-repository ppa:chris-lea/node.js
-wget -qO- https://deb.nodesource.com/setup_10.x | bash -
+wget -qO- https://deb.nodesource.com/setup_14.x | bash -
 
 #update g++ to 4.8
 add-apt-repository ppa:ubuntu-toolchain-r/test -y
@@ -52,7 +52,6 @@ g++ --version
 apt-get -y install nginx || (echo "Failed to install nginx." ; exit)
 
 #install node.js
-#bash $DIR/scripts/install.nodejs.deb.sh || (echo "Failed to install nodejs." ; exit)
 apt-get -y install nodejs || (echo "Failed to install nodejs." ; exit)
 
 #install supervisor
@@ -64,7 +63,7 @@ apt-get -y install supervisor || (echo "Failed to install supervisor." ; exit)
 #install grunt & npm modules
 node --version
 npm --version
-(  npm install npm@6.4.1 -g; npm --version; npm install -g grunt-cli --unsafe-perm ; sudo npm install --unsafe-perm )
+(  npm install -g grunt-cli --unsafe-perm ; sudo npm install --unsafe-perm )
 
 GLIBC_VERSION=$(ldd --version | head -n 1 | rev | cut -d ' ' -f 1 | rev)
 if [[ "$GLIBC_VERSION" != "2.25" ]]; then
@@ -120,6 +119,9 @@ bash "$DIR/scripts/countly.install.plugins.sh"
 
 #compile scripts for production
 cd "$DIR" && grunt dist-all
+
+# after install call
+countly check after install
 
 #finally start countly api and dashboard
 countly start

@@ -130,6 +130,7 @@ var plugin = {},
                                     resultObj.version = data.version || "unknown";
                                     resultObj.author = data.author || "unknown";
                                     resultObj.homepage = data.homepage || "";
+                                    resultObj.cly_dependencies = data.cly_dependencies || {};
 
                                     //we need to get localization only if plugin is disabled
                                     if (!resultObj.enabled) {
@@ -146,7 +147,7 @@ var plugin = {},
                                     }
                                 }
                                 else {
-                                    resultObj = {name: file, title: file, description: file, version: "unknown", author: "unknown", homepage: "", code: file, enabled: false};
+                                    resultObj = {name: file, title: file, description: file, version: "unknown", author: "unknown", homepage: "", code: file, enabled: false, cly_dependencies: {}};
                                 }
                                 if (global.enclose) {
                                     var eplugin = global.enclose.plugins[file];
@@ -254,9 +255,11 @@ var plugin = {},
                 common.returnMessage(params, 401, 'User is not a global administrator');
                 return false;
             }
-            var confs = plugins.getAllConfigs();
-            delete confs.services;
-            common.returnOutput(params, confs);
+            plugins.loadConfigs(common.db, function() {
+                var confs = plugins.getAllConfigs();
+                delete confs.services;
+                common.returnOutput(params, confs);
+            });
         }, params);
         return true;
     });
@@ -303,8 +306,10 @@ var plugin = {},
         var params = ob.params;
         var validateUserForMgmtReadAPI = ob.validateUserForMgmtReadAPI;
         validateUserForMgmtReadAPI(function() {
-            var confs = plugins.getUserConfigs(params.member.settings);
-            common.returnOutput(params, confs);
+            plugins.loadConfigs(common.db, function() {
+                var confs = plugins.getUserConfigs(params.member.settings);
+                common.returnOutput(params, confs);
+            });
         }, params);
         return true;
     });

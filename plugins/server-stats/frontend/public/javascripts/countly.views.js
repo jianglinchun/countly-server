@@ -1,11 +1,11 @@
-/*global $, jQuery, app, countlyView, countlyCommon, countlyGlobal, Handlebars, CountlyHelpers, DataPointsView, countlyDataPoints, moment*/
+/*global $, jQuery, app, countlyView, countlyCommon, T, CountlyHelpers, DataPointsView, countlyDataPoints, moment*/
 
 window.DataPointsView = countlyView.extend({
     beforeRender: function() {
         var self = this;
         self.date_range = this.getDateRange("current");
-        return $.when($.get(countlyGlobal.path + '/server-stats/templates/data-points.html', function(src) {
-            self.template = Handlebars.compile(src);
+        return $.when(T.render('/server-stats/templates/data-points.html', function(src) {
+            self.template = src;
         }), countlyDataPoints.initialize(), countlyDataPoints.punchCard(self.date_range)).then(function() {
             self.punchCardData = countlyDataPoints.getPunchCardData();
         });
@@ -109,28 +109,32 @@ window.DataPointsView = countlyView.extend({
             self.dtable = $('.d-table').dataTable($.extend({}, $.fn.dataTable.defaults, {
                 "aaData": countlyDataPoints.getTableData(),
                 "aoColumns": [
-                    { "mData": "app-name", "sType": "string", "sTitle": jQuery.i18n.map["compare.apps.app-name"] || "App Name", "sClass": "break" },
                     {
-                        "mData": "sessions",
+                        "mData": function(row) {
+                            return row["app-name"] || "";
+                        },
+                        "sType": "string",
+                        "sTitle": jQuery.i18n.map["compare.apps.app-name"] || "App Name",
+                        "sClass": "break"
+                    },
+                    {
                         "sType": "formatted-num",
-                        "mRender": function(d) {
-                            return countlyCommon.formatNumber(d);
+                        "mData": function(row) {
+                            return countlyCommon.formatNumber(row.sessions || 0);
                         },
                         "sTitle": jQuery.i18n.map["sidebar.analytics.sessions"]
                     },
                     {
-                        "mData": "events",
                         "sType": "formatted-num",
-                        "mRender": function(d) {
-                            return countlyCommon.formatNumber(d);
+                        "mData": function(row) {
+                            return countlyCommon.formatNumber(row.events || 0);
                         },
                         "sTitle": jQuery.i18n.map["sidebar.events"]
                     },
                     {
-                        "mData": "data-points",
                         "sType": "formatted-num",
-                        "mRender": function(d) {
-                            return countlyCommon.formatNumber(d);
+                        "mData": function(row) {
+                            return countlyCommon.formatNumber(row["data-points"] || 0);
                         },
                         "sTitle": jQuery.i18n.map["server-stats.data-points"]
                     }

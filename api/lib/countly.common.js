@@ -32,7 +32,7 @@ function getTicksBetween(startTimestamp, endTimestamp) {
             dayIt.add(1 + dayIt.daysInMonth() - dayIt.date(), "days");
         }
         else if (daysLeft >= (7 - dayIt.day()) && dayIt.day() === 1) {
-            ticks.push(dayIt.format("YYYY.[w]w"));
+            ticks.push(dayIt.format("gggg.[w]w"));
             dayIt.add(8 - dayIt.day(), "days");
         }
         else {
@@ -61,7 +61,7 @@ function getTicksCheckBetween(startTimestamp, endTimestamp) {
             dayIt.add(1 + dayIt.daysInMonth() - dayIt.date(), "days");
         }
         else {
-            ticks.push(dayIt.format("YYYY.[w]w"));
+            ticks.push(dayIt.format("gggg.[w]w"));
             dayIt.add(8 - dayIt.day(), "days");
         }
     }
@@ -105,35 +105,54 @@ function getPeriodObject() {
         }
         catch (SyntaxError) {
             console.log("period JSON parse failed");
-            _period = "month";
+            _period = "30days";
         }
     }
 
     if (Array.isArray(_period)) {
+        if ((_period[0] + "").length === 10) {
+            _period[0] *= 1000;
+        }
+        if ((_period[1] + "").length === 10) {
+            _period[1] *= 1000;
+        }
         var fromDate, toDate;
 
         if (Number.isInteger(_period[0]) && Number.isInteger(_period[1])) {
-            fromDate = new Date(_period[0]);
-            toDate = new Date(_period[1]);
+            fromDate = moment(_period[0]);
+            toDate = moment(_period[1]);
         }
         else {
-            fromDate = moment(_period[0], ["DD-MM-YYYY HH:mm:ss", "DD-MM-YYYY"]).toDate();
-            toDate = moment(_period[1], ["DD-MM-YYYY HH:mm:ss", "DD-MM-YYYY"]).toDate();
+            fromDate = moment(_period[0], ["DD-MM-YYYY HH:mm:ss", "DD-MM-YYYY"]);
+            toDate = moment(_period[1], ["DD-MM-YYYY HH:mm:ss", "DD-MM-YYYY"]);
         }
 
-        startTimestamp = moment(fromDate).utc().startOf("day");
-        endTimestamp = moment(toDate).utc().endOf("day");
-        fromDate.setTimezone(_appTimezone);
-        toDate.setTimezone(_appTimezone);
+        startTimestamp = fromDate.clone().utc().startOf("day");
+        endTimestamp = toDate.clone().utc().endOf("day");
+        fromDate.tz(_appTimezone);
+        toDate.tz(_appTimezone);
 
-        if (fromDate.getTime() === toDate.getTime()) {
+        if (fromDate.valueOf() === toDate.valueOf()) {
             cycleDuration = moment.duration(1, "day");
             Object.assign(periodObject, {
                 dateString: "D MMM, HH:mm",
                 periodMax: 23,
                 periodMin: 0,
-                activePeriod: moment(fromDate).tz(_appTimezone).format("YYYY.M.D"),
-                previousPeriod: moment(fromDate).tz(_appTimezone).subtract(1, "day").format("YYYY.M.D")
+                activePeriod: fromDate.format("YYYY.M.D"),
+                previousPeriod: fromDate.clone().subtract(1, "day").format("YYYY.M.D")
+            });
+        }
+        else if (fromDate.valueOf() > toDate.valueOf()) {
+            //incorrect range - reset to 30 days
+            let nDays = 30;
+
+            startTimestamp = _currMoment.clone().utc().startOf("day").subtract(nDays - 1, "days");
+            endTimestamp = _currMoment.clone().utc().endOf("day");
+
+            cycleDuration = moment.duration(nDays, "days");
+            Object.assign(periodObject, {
+                dateString: "D MMM",
+                isSpecialPeriod: true
             });
         }
         else {
@@ -195,7 +214,33 @@ function getPeriodObject() {
     }
     else if (/([0-9]+)days/.test(_period)) {
         let nDays = parseInt(/([0-9]+)days/.exec(_period)[1]);
-
+        if (nDays < 1) {
+            nDays = 30; //if there is less than 1 day
+        }
+        startTimestamp = _currMoment.clone().utc().startOf("day").subtract(nDays - 1, "days");
+        cycleDuration = moment.duration(nDays, "days");
+        Object.assign(periodObject, {
+            dateString: "D MMM",
+            isSpecialPeriod: true
+        });
+    }
+    else if (/([0-9]+)weeks/.test(_period)) {
+        let nDays = parseInt(/([0-9]+)weeks/.exec(_period)[1]) * 7;
+        if (nDays < 1) {
+            nDays = 30; //if there is less than 1 day
+        }
+        startTimestamp = _currMoment.clone().utc().startOf("day").subtract(nDays - 1, "days");
+        cycleDuration = moment.duration(nDays, "days");
+        Object.assign(periodObject, {
+            dateString: "D MMM",
+            isSpecialPeriod: true
+        });
+    }
+    else if (/([0-9]+)months/.test(_period)) {
+        let nDays = parseInt(/([0-9]+)months/.exec(_period)[1]) * 30;
+        if (nDays < 1) {
+            nDays = 30; //if there is less than 1 day
+        }
         startTimestamp = _currMoment.clone().utc().startOf("day").subtract(nDays - 1, "days");
         cycleDuration = moment.duration(nDays, "days");
         Object.assign(periodObject, {
@@ -326,11 +371,7 @@ countlyCommon.periodObj = getPeriodObject();
 countlyCommon.setTimezone = function(appTimezone) {
     if (appTimezone && appTimezone.length) {
         _appTimezone = appTimezone;
-
-        var currTime = new Date();
-        currTime.setTimezone(appTimezone);
-
-        _currMoment = moment(currTime);
+        _currMoment = moment();
         _currMoment.tz(appTimezone);
         countlyCommon.periodObj = getPeriodObject();
     }
@@ -949,6 +990,7 @@ countlyCommon.extractTwoLevelData = function(db, rangeArray, clearFunction, data
 * @param {number} maxItems - amount of items to return, default 3
 * @param {string=} metric - metric to output and use in sorting, default "t"
 * @param {object=} totalUserOverrideObj - data from total users api request to correct unique user values
+* @param {function} fixBarSegmentData - function to make any adjustments to the extracted data based on segment
 * @returns {array} array with top 3 values
 * @example <caption>Return data</caption>
 * [
@@ -957,7 +999,7 @@ countlyCommon.extractTwoLevelData = function(db, rangeArray, clearFunction, data
 *    {"name":"Windows Phone","percent":32}
 * ]
 */
-countlyCommon.extractBarData = function(db, rangeArray, clearFunction, fetchFunction, maxItems, metric, totalUserOverrideObj) {
+countlyCommon.extractBarData = function(db, rangeArray, clearFunction, fetchFunction, maxItems, metric, totalUserOverrideObj, fixBarSegmentData) {
     metric = metric || "t";
     maxItems = maxItems || 3;
     fetchFunction = fetchFunction || function(rangeArr) {
@@ -979,6 +1021,11 @@ countlyCommon.extractBarData = function(db, rangeArray, clearFunction, fetchFunc
         dataProps.push({name: "u"});
     }
     var rangeData = countlyCommon.extractTwoLevelData(db, rangeArray, clearFunction, dataProps, totalUserOverrideObj);
+
+    if (fixBarSegmentData) {
+        rangeData = fixBarSegmentData(rangeData);
+    }
+
     rangeData.chartData = countlyCommon.mergeMetricsByName(rangeData.chartData, "range");
     rangeData.chartData = underscore.sortBy(rangeData.chartData, function(obj) {
         return -obj[metric];
@@ -989,21 +1036,13 @@ countlyCommon.extractBarData = function(db, rangeArray, clearFunction, fetchFunc
         sum = 0,
         totalPercent = 0;
 
-    if (rangeNames.length < maxItems) {
-        maxItems = rangeNames.length;
-    }
+    rangeTotal.forEach(function(r) {
+        sum += r;
+    });
 
-    for (let i = 0; i < maxItems; i++) {
-        sum += rangeTotal[i];
-    }
-
-    for (let i = 0; i < maxItems; i++) {
-        var percent = Math.floor((rangeTotal[i] / sum) * 100);
+    for (let i = rangeNames.length - 1; i >= 0; i--) {
+        var percent = countlyCommon.round((rangeTotal[i] / sum) * 100, 1);
         totalPercent += percent;
-
-        if (i === (maxItems - 1)) {
-            percent += 100 - totalPercent;
-        }
 
         barData[i] = {
             "name": rangeNames[i],
@@ -1011,6 +1050,14 @@ countlyCommon.extractBarData = function(db, rangeArray, clearFunction, fetchFunc
             "percent": percent
         };
     }
+
+    barData = countlyCommon.fixPercentageDelta(barData, totalPercent);
+
+    if (rangeNames.length < maxItems) {
+        maxItems = rangeNames.length;
+    }
+
+    barData = barData.slice(0, maxItems);
 
     return underscore.sortBy(barData, function(obj) {
         return -obj.value;
@@ -1688,7 +1735,7 @@ countlyCommon.getDashboardData = function(data, properties, unique, totalUserOve
 * }
 */
 countlyCommon.getTimestampRangeQuery = function(params, inSeconds) {
-    var periodObj = countlyCommon.periodObj;
+    var periodObj = countlyCommon.getPeriodObj(params);
     var now = (params.time && params.time.now) ? params.time.now : moment();
     //create current period array if it does not exist
     if (!periodObj.currentPeriodArr || periodObj.currentPeriodArr.length === 0) {
@@ -1724,24 +1771,27 @@ countlyCommon.getTimestampRangeQuery = function(params, inSeconds) {
     var ts = {};
 
     tmpArr = periodObj.currentPeriodArr[0].split(".");
-    ts.$gte = new Date(Date.UTC(parseInt(tmpArr[0]), parseInt(tmpArr[1]) - 1, parseInt(tmpArr[2])));
-    ts.$gte.setTimezone(params.appTimezone);
+    ts.$gte = moment(new Date(Date.UTC(parseInt(tmpArr[0]), parseInt(tmpArr[1]) - 1, parseInt(tmpArr[2]))));
+    if (params.appTimezone) {
+        ts.$gte.tz(params.appTimezone);
+    }
     if (inSeconds) {
-        ts.$gte = ts.$gte.getTime() / 1000 + ts.$gte.getTimezoneOffset() * 60;
+        ts.$gte = ts.$gte.valueOf() / 1000 - ts.$gte.utcOffset() * 60;
     }
     else {
-        ts.$gte = ts.$gte.getTime() + ts.$gte.getTimezoneOffset() * 60000;
+        ts.$gte = ts.$gte.valueOf() - ts.$gte.utcOffset() * 60000;
     }
 
     tmpArr = periodObj.currentPeriodArr[periodObj.currentPeriodArr.length - 1].split(".");
-    ts.$lt = new Date(Date.UTC(parseInt(tmpArr[0]), parseInt(tmpArr[1]) - 1, parseInt(tmpArr[2])));
-    ts.$lt.setDate(ts.$lt.getDate() + 1);
-    ts.$lt.setTimezone(params.appTimezone);
+    ts.$lt = moment(new Date(Date.UTC(parseInt(tmpArr[0]), parseInt(tmpArr[1]) - 1, parseInt(tmpArr[2])))).add(1, 'days');
+    if (params.appTimezone) {
+        ts.$lt.tz(params.appTimezone);
+    }
     if (inSeconds) {
-        ts.$lt = ts.$lt.getTime() / 1000 + ts.$lt.getTimezoneOffset() * 60;
+        ts.$lt = ts.$lt.valueOf() / 1000 - ts.$lt.utcOffset() * 60;
     }
     else {
-        ts.$lt = ts.$lt.getTime() + ts.$lt.getTimezoneOffset() * 60000;
+        ts.$lt = ts.$lt.valueOf() - ts.$lt.utcOffset() * 60000;
     }
     return ts;
 };
@@ -1774,13 +1824,17 @@ countlyCommon.mergeMetricsByName = function(chartData, metric) {
         else {
             for (var key in data) {
                 if (typeof data[key] === "string") {
-                    uniqueNames[data[metric]][key] = data[key];
+                    if (uniqueNames[data[metric]]) {
+                        uniqueNames[data[metric]][key] = data[key];
+                    }
                 }
                 else if (typeof data[key] === "number") {
-                    if (!uniqueNames[data[metric]][key]) {
-                        uniqueNames[data[metric]][key] = 0;
+                    if (uniqueNames[data[metric]]) {
+                        if (!uniqueNames[data[metric]][key]) {
+                            uniqueNames[data[metric]][key] = 0;
+                        }
+                        uniqueNames[data[metric]][key] += data[key];
                     }
-                    uniqueNames[data[metric]][key] += data[key];
                 }
             }
         }
@@ -1850,7 +1904,7 @@ countlyCommon.decode = function(str) {
 * @param {(string|string[]|number[])} defaultPeriod - default period value in case it's not supplied in the params
 * @returns {module:api/lib/countly.common.periodObj} period object
 */
-countlyCommon.getPeriodObj = function(params, defaultPeriod = "month") {
+countlyCommon.getPeriodObj = function(params, defaultPeriod = "30days") {
     let appTimezone = params.appTimezone || (params.app && params.app.timezone);
 
     params.qstring.period = params.qstring.period || defaultPeriod;
@@ -1868,10 +1922,7 @@ countlyCommon.getPeriodObj = function(params, defaultPeriod = "month") {
     if (appTimezone && appTimezone.length) {
         _appTimezone = appTimezone;
 
-        let currTime = new Date();
-        currTime.setTimezone(appTimezone);
-
-        _currMoment = moment(currTime);
+        _currMoment = moment().tz(appTimezone);
         _currMoment.tz(appTimezone);
     }
 
@@ -1893,6 +1944,48 @@ countlyCommon.getPeriodObj = function(params, defaultPeriod = "month") {
 countlyCommon.validateEmail = function(email) {
     var re = /[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/;
     return re.test(email);
+};
+
+/**
+* Round to provided number of digits
+* @memberof countlyCommon
+* @param {number} num - number to round
+* @param {number} digits - amount of digits to round to
+* @returns {number} rounded number
+* @example
+* //outputs 1.235
+* countlyCommon.round(1.2345, 3);
+*/
+countlyCommon.round = function(num, digits) {
+    digits = Math.pow(10, digits || 0);
+    return Math.round(num * digits) / digits;
+};
+
+/**
+ * Function to fix percentage difference
+ * @param  {Array} items - All items
+ * @param  {Number} totalPercent - Total percentage so far
+ * @returns {Array} items
+ */
+countlyCommon.fixPercentageDelta = function(items, totalPercent) {
+    if (!items.length) {
+        return items;
+    }
+
+    var deltaFixEl = 0;
+    if (totalPercent < 100) {
+        //Add the missing delta to the first value
+        deltaFixEl = 0;
+    }
+    else if (totalPercent > 100) {
+        //Subtract the extra delta from the last value
+        deltaFixEl = items.length - 1;
+    }
+
+    items[deltaFixEl].percent += 100 - totalPercent;
+    items[deltaFixEl].percent = countlyCommon.round(items[deltaFixEl].percent, 1);
+
+    return items;
 };
 
 module.exports = countlyCommon;

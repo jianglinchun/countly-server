@@ -13,7 +13,9 @@ window.MobileDashboardView = countlyView.extend({
             "map-list-users": {id: 'total', label: jQuery.i18n.map["sidebar.analytics.users"], type: 'number', metric: "u"},
             "map-list-new": {id: 'total', label: jQuery.i18n.map["common.table.new-users"], type: 'number', metric: "n"}
         };
-        return $.when(countlyAnalyticsAPI.initialize(["platforms", "devices", "carriers"]), countlySession.initialize(), countlyTotalUsers.initialize("users"), countlyTotalUsers.initialize("countries"), countlyCommon.getGraphNotes([countlyCommon.ACTIVE_APP_ID])).then(function() {});
+        //do not wait on country initialization
+        countlyTotalUsers.initialize("countries");
+        return $.when(countlyAnalyticsAPI.initialize(["platforms", "devices", "carriers"]), countlySession.initialize(), countlyTotalUsers.initialize("users"), countlyCommon.getGraphNotes([countlyCommon.ACTIVE_APP_ID])).then(function() {});
     },
     afterRender: function() {
         if (countlyGlobal.config.use_google) {
@@ -334,6 +336,7 @@ $(document).ready(function() {
     app.addSubMenuForType("mobile", "analytics", {code: "analytics-carriers", url: "#/analytics/carriers", text: "sidebar.analytics.carriers", priority: 70});
     app.addSubMenuForType("mobile", "analytics", {code: "analytics-versions", url: "#/analytics/versions", text: "sidebar.analytics.app-versions", priority: 60});
     app.addSubMenuForType("mobile", "analytics", {code: "analytics-resolutions", url: "#/analytics/resolutions", text: "sidebar.analytics.resolutions", priority: 50});
+    app.addSubMenuForType("mobile", "analytics", {code: "analytics-device_type", url: "#/analytics/device_type", text: "device_type.title", priority: 45});
     app.addSubMenuForType("mobile", "analytics", {code: "analytics-devices", url: "#/analytics/devices", text: "sidebar.analytics.devices", priority: 40});
     app.addSubMenuForType("mobile", "analytics", {code: "analytics-countries", url: "#/analytics/countries", text: "sidebar.analytics.countries", priority: 30});
     app.addSubMenuForType("mobile", "analytics", {code: "analytics-sessions", url: "#/analytics/sessions", text: "sidebar.analytics.sessions", priority: 20});
